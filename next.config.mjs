@@ -1,8 +1,4 @@
 import createMDX from "@next/mdx";
-import remarkGfm from "remark-gfm";
-import rehypeSlug from "rehype-slug";
-import rehypeAutolinkHeadings from "rehype-autolink-headings";
-import rehypePrettyCode from "rehype-pretty-code";
 
 /** @type {import('rehype-pretty-code').Options} */
 const prettyCodeOptions = {
@@ -26,13 +22,15 @@ const nextConfig = {
   },
 };
 
+// Plugins are referenced by string name (not imported functions) so the MDX
+// pipeline is serializable for Turbopack — the default bundler in Next 16.
 const withMDX = createMDX({
   options: {
-    remarkPlugins: [remarkGfm],
+    remarkPlugins: [["remark-gfm", {}]],
     rehypePlugins: [
-      rehypeSlug,
-      [rehypeAutolinkHeadings, { behavior: "wrap", properties: { className: ["anchor"] } }],
-      [rehypePrettyCode, prettyCodeOptions],
+      ["rehype-slug", {}],
+      ["rehype-autolink-headings", { behavior: "wrap", properties: { className: ["anchor"] } }],
+      ["rehype-pretty-code", prettyCodeOptions],
     ],
   },
 });

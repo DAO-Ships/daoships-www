@@ -7,7 +7,7 @@ See [`PLAN.md`](./PLAN.md) for the full strategy, sitemap, content outline, and 
 
 ## Stack
 
-- **Next.js 15.5** (App Router) · **React 19** · **TypeScript**
+- **Next.js 16** (App Router, Turbopack build) · **React 19.2** · **TypeScript**
 - **Tailwind CSS 3.4** — design tokens ported from `daoships-app` (indigo/cyan helm system,
   with Quai-red ecosystem accents)
 - **Light + dark themes** — `dao-*` palette is channel-based CSS vars that flip on a `.dark`
@@ -18,9 +18,9 @@ See [`PLAN.md`](./PLAN.md) for the full strategy, sitemap, content outline, and 
 - Live stats via the DAO Ships **Supabase** indexer (graceful fallback when unconfigured)
 - Deploys on **Vercel**
 
-> Security: `next`/`@next/mdx` pinned to the **15.5.x** security-backport line and a
-> `postcss` override (`^8.5.15`) keep `npm audit` at **0 vulnerabilities**. A Next 16
-> migration is deferred (some newest advisories are only fixed in 16.x).
+> Security: on **Next 16.2.7** with a `postcss` override (`^8.5.15`) — `npm audit` reports
+> **0 vulnerabilities**. MDX remark/rehype plugins are configured by **string name** (not
+> imported functions) so the pipeline is serializable for Turbopack.
 
 ## Develop
 
