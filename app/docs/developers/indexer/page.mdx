@@ -17,16 +17,9 @@ types across the launcher, governance, tokens, navigators, and `Poster`.
 
 ## Schema per network
 
-Each network gets an isolated PostgreSQL schema (`testnet`, `mainnet`, `dev`), and every table is
-prefixed `ds_`. Schemas are created and exposed to the PostgREST API like this:
-
-```sql
-SELECT create_ds_schema('testnet');
-SELECT create_ds_schema('mainnet');
-
--- Expose schemas to PostgREST so supabase-js can reach them
-ALTER ROLE authenticator SET pgrst.db_schemas TO 'public, graphql_public, testnet, mainnet, dev';
-```
+Each network is an isolated PostgreSQL schema — `testnet` today, `mainnet` at launch — and every
+table is prefixed `ds_`. Point your client at the schema for the network you're reading (see the
+query examples below).
 
 ## The ds_* tables
 

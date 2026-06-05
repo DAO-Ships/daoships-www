@@ -16,7 +16,7 @@ const nextConfig = {
     // Section roots have no index page — send them to the first page of each.
     return [
       { source: "/docs/concepts", destination: "/docs/concepts/what-is-a-dao", permanent: false },
-      { source: "/docs/guides", destination: "/docs/guides/wallet-setup", permanent: false },
+      { source: "/docs/guides", destination: "/docs/guides/launch-a-dao", permanent: false },
       { source: "/docs/developers", destination: "/docs/developers/architecture", permanent: false },
     ];
   },

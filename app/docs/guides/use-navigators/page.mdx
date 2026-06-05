@@ -1,0 +1,51 @@
+export const metadata = {
+  title: "Use Navigators",
+  description:
+    "Add and configure navigators in DAO Ships — Onboarder, ERC-20 Tribute, and NFT-gated — to let new members join instantly without a proposal for each one.",
+};
+
+# Use Navigators
+
+By default, adding a member means passing a **Membership** proposal. That's fine for a founding crew, but it doesn't scale to open onboarding. **Navigators** are permissioned plug-in contracts that let people join on their own terms — paying a tribute or proving they hold an NFT — and get minted Shares or Loot automatically. For the concept and trust model, see [Navigators](/docs/concepts/navigators).
+
+## The shipped navigators
+
+- **Onboarder** — new members send native **QUAI** tribute and receive Shares and/or Loot.
+- **ERC-20 Tribute** — same idea, but members pay in a chosen ERC-20 (a stablecoin or project token), with permit support for one-transaction joins.
+- **NFT-gated** — holders of a specific ERC-721 collection claim membership, one claim per token.
+
+## Add a navigator
+
+You can attach navigators two ways:
+
+1. **At launch** — the launch wizard's **Navigators** step lets you enable and configure an Onboarder or ERC-20 Tribute navigator as part of the deploy.
+2. **After launch** — pass a **Navigators** proposal. Because granting navigator permissions is `governanceOnly`, the DAO must vote to add, reconfigure, pause, or revoke one. This keeps a powerful capability under member control.
+
+## Configure an Onboarder
+
+When you add an Onboarder, you set how tribute converts to tokens and the limits that keep it safe:
+
+| Setting | What it does |
+| --- | --- |
+| Mode | `multiplier` (shares = tribute × multiplier) or `fixed-price` (a set price per share) |
+| Price / multiplier | The conversion rate from QUAI to Shares and/or Loot |
+| `minTribute` | The minimum contribution accepted |
+| `mintCap` | Total Shares/Loot the navigator may ever mint |
+| `perAddressCap` | The most any single address can mint |
+| Allowlist | Optional — restrict joining to approved addresses |
+| Expiry | Optional — the navigator stops minting after this time |
+| Pause | A `GOVERNOR` can pause/unpause onboarding at any time |
+
+<Callout type="warning" title="Navigators are trusted code">
+A navigator with `MANAGER` permission can mint tokens. Only enable navigators that are immutable, audited, and bounded by a `mintCap` and (where appropriate) an allowlist. Governance can always pause or revoke one, but treat enabling a navigator as a high-trust action.
+</Callout>
+
+## How members join through a navigator
+
+Once a navigator is live, a prospective member opens the DAO's **Navigators** page in the app, picks the navigator, and submits their tribute (or NFT claim). Shares and/or Loot are minted to them in the same transaction — no proposal, no waiting. Newly minted Shares self-delegate, so their voting power is active immediately.
+
+## Related
+
+- [Navigators](/docs/concepts/navigators) — the permission model in depth
+- [Manage members & shares](/docs/guides/manage-members) — manual membership via proposals
+- [Configure governance](/docs/guides/governance-parameters) — tune the rules around onboarding

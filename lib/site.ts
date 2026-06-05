@@ -2,22 +2,23 @@
 // App/docs URLs are env-overridable so deployment can point them at the real hosts.
 
 export const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL ?? "https://app.daoships.xyz";
+  process.env.NEXT_PUBLIC_APP_URL ?? "https://testnet.daoships.org";
 
 export const site = {
   name: "DAO Ships",
   tagline: "Launch a DAO on Quai. In one transaction.",
   description:
     "Open-source, audited DAO governance for Quai Network — with a Quai Vault multisig treasury and the right to walk away. Inspired by MolochDAO v3, rewritten from scratch.",
-  url: "https://daoships.xyz",
+  url: "https://daoships.org",
   launchUrl: `${APP_URL}/launch`,
   exploreUrl: `${APP_URL}/explore`,
   appUrl: APP_URL,
+  // TODO(confirm): these social links are unverified placeholders.
   github: "https://github.com/daoships",
   discord: "https://discord.gg/quai",
   x: "https://x.com/daoships",
   quai: "https://qu.ai",
-  quaiVault: "https://quaivault.xyz",
+  quaiVault: "https://quaivault.org",
 };
 
 export const nav = [

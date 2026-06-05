@@ -1,0 +1,45 @@
+export const metadata = {
+  title: "Manage Members & Shares",
+  description:
+    "Add members, mint and burn Shares and Loot, convert voting power to economic stake, register guild tokens, and understand how members exit via ragequit in DAO Ships.",
+};
+
+# Manage Members & Shares
+
+Membership in a DAO Ships ship is just token balances: **Shares** (voting power) and **Loot** (economic stake, no vote). Managing members means minting, burning, and converting those tokens — always through governance. For the distinction, see [Shares vs. Loot](/docs/concepts/shares-vs-loot).
+
+## Add or adjust members
+
+Use a **Membership** proposal to mint Shares and/or Loot to one or more addresses. The same proposal type can burn tokens too. Typical uses:
+
+- **Onboard a contributor** — mint Shares so they can vote.
+- **Reward without governance** — mint Loot so someone shares in the treasury without gaining a vote (good for advisors or investors).
+- **Remove or reduce** — burn Shares/Loot from an address (for example, when someone leaves).
+
+For open, self-serve onboarding instead of a proposal per member, attach a navigator — see [Use navigators](/docs/guides/use-navigators).
+
+<Callout type="info" title="Newly minted Shares vote immediately">
+Shares auto-delegate to their holder on mint, so a new member's voting power is active right away. They can re-point it later — see [Vote & delegate](/docs/guides/vote-and-delegate).
+</Callout>
+
+## Convert Shares to Loot
+
+A member (via governance) can convert Shares into Loot. This strips voting power while preserving economic stake — useful when someone steps back from governance but keeps their financial position. There is no reverse conversion; minting new Shares is a separate Membership action.
+
+## Register guild tokens
+
+Ragequit pays out a member's proportional slice of the treasury's **guild tokens** — the ERC-20 assets the DAO has registered for redemption. Use a **Guild Tokens** proposal to add or remove which tokens are included. Keep the list current so exiting members receive their fair share of every asset the treasury holds.
+
+<Callout type="tip" title="Mind the token cap">
+A DAO can register up to `MAX_GUILD_TOKENS = 20` ragequit tokens. Add the assets that matter; you don't need to register every dust balance.
+</Callout>
+
+## How members leave: ragequit
+
+Any member can **ragequit** — burn their Shares and Loot and withdraw a proportional share of the treasury's guild tokens, typically during a proposal's grace period. It's the exit hatch that protects anyone who disagrees with a passing decision. A `minRetentionPercent` guard stops a mass exit from draining the DAO. Members do this themselves in the app; it isn't a proposal. See [Ragequit](/docs/concepts/ragequit) for the mechanics.
+
+## Related
+
+- [Shares vs. Loot](/docs/concepts/shares-vs-loot)
+- [Use navigators](/docs/guides/use-navigators)
+- [Vote & delegate](/docs/guides/vote-and-delegate)

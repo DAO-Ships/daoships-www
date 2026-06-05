@@ -23,6 +23,16 @@ export default async function HomePage() {
         <HelmBackdrop />
         <div className="section relative pb-20 pt-20 sm:pt-28">
           <Reveal>
+            <span className="inline-flex items-center gap-2 rounded-full border border-accent-500/40 bg-accent-500/10 px-3.5 py-1.5 text-xs font-medium text-accent-700 dark:text-accent-200">
+              <span className="relative flex h-2 w-2" aria-hidden>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-500 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-500" />
+              </span>
+              Live on Quai Orchard Testnet
+              <span className="text-dao-text-muted">· Mainnet coming soon</span>
+            </span>
+          </Reveal>
+          <Reveal delay={0.04} className="mt-6">
             <span className="eyebrow">
               <Anchor className="h-3.5 w-3.5" />
               DAO launchpad for Quai Network
@@ -72,7 +82,7 @@ export default async function HomePage() {
               ))}
             </dl>
             <p className="mt-3 font-mono text-xs text-dao-text-hint">
-              Live from the DAO Ships indexer · Cyprus-1 testnet
+              Live from the DAO Ships indexer · Quai Orchard Testnet (Cyprus-1)
             </p>
           </Reveal>
         </div>
