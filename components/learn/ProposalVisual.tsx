@@ -145,16 +145,16 @@ export function ProposalVisual() {
           align-items: center;
           gap: 0.375rem;
           border-radius: 0.5rem;
-          border: 1px solid var(--dao-border);
-          background: rgba(37, 37, 64, 0.5);
+          border: 1px solid rgb(var(--dao-border));
+          background: rgb(var(--dao-surface) / 0.5);
           padding: 0.5rem 0.75rem;
           font-size: 0.75rem;
           font-weight: 500;
-          color: var(--dao-text-secondary);
+          color: rgb(var(--dao-text-secondary));
           transition: all 0.15s;
         }
         .ctrl:hover:not(:disabled) {
-          color: var(--dao-text);
+          color: rgb(var(--dao-text));
           border-color: rgba(99, 102, 241, 0.5);
         }
         .ctrl:disabled {
@@ -164,7 +164,7 @@ export function ProposalVisual() {
         .ctrl-primary {
           background: rgba(99, 102, 241, 0.15);
           border-color: rgba(99, 102, 241, 0.5);
-          color: #c7d2fe;
+          color: rgb(var(--dao-link));
         }
       `}</style>
     </div>

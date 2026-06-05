@@ -3,26 +3,46 @@
 @tailwind utilities;
 
 @layer base {
-  /* Dark-first marketing palette (mirrors the dapp's .dark theme) */
+  /* Palette as space-separated RGB channels so Tailwind can apply /opacity
+     AND the theme can flip by toggling the `.dark` class on <html>.
+     Light theme is the default (:root); dark overrides under .dark. */
   :root {
-    --dao-bg-1: #0a0a12;
-    --dao-bg-2: #0f0f1a;
-    --dao-bg-3: #161625;
-    --dao-bg-4: #1e1e30;
-    --dao-surface: #252540;
-    --dao-border: #2e2e4a;
-    --dao-text: #f3f4f6;
-    --dao-text-secondary: #d1d5db;
-    --dao-text-muted: #9ca3af;
-    --dao-text-hint: #6b7280;
+    --dao-bg-1: 248 249 252;       /* #f8f9fc */
+    --dao-bg-2: 240 241 247;       /* #f0f1f7 */
+    --dao-bg-3: 230 231 240;       /* #e6e7f0 */
+    --dao-bg-4: 220 221 233;       /* #dcdde9 */
+    --dao-surface: 207 209 224;    /* #cfd1e0 */
+    --dao-border: 192 194 212;     /* #c0c2d4 */
+    --dao-text: 15 23 42;          /* #0f172a */
+    --dao-text-secondary: 51 65 85;   /* #334155 */
+    --dao-text-muted: 100 116 139;    /* #64748b */
+    --dao-text-hint: 148 163 184;     /* #94a3b8 */
+    --dao-link: 67 56 202;            /* indigo-700 — readable on light */
+    --dao-shadow-strength: 0.08;
+    --dao-glow-strength: 0.12;
+    --dao-overlay: rgba(0, 0, 0, 0.05);
+  }
+
+  .dark {
+    --dao-bg-1: 10 10 18;          /* #0a0a12 */
+    --dao-bg-2: 15 15 26;          /* #0f0f1a */
+    --dao-bg-3: 22 22 37;          /* #161625 */
+    --dao-bg-4: 30 30 48;          /* #1e1e30 */
+    --dao-surface: 37 37 64;       /* #252540 */
+    --dao-border: 46 46 74;        /* #2e2e4a */
+    --dao-text: 243 244 246;       /* #f3f4f6 */
+    --dao-text-secondary: 209 213 219; /* #d1d5db */
+    --dao-text-muted: 156 163 175;     /* #9ca3af */
+    --dao-text-hint: 107 114 128;      /* #6b7280 */
+    --dao-link: 165 180 252;           /* indigo-300 — readable on dark */
     --dao-shadow-strength: 0.8;
     --dao-glow-strength: 0.3;
     --dao-overlay: rgba(0, 0, 0, 0.5);
   }
 
   html {
-    background-color: var(--dao-bg-1);
-    color: var(--dao-text);
+    background-color: rgb(var(--dao-bg-1));
+    color: rgb(var(--dao-text));
     scroll-behavior: smooth;
   }
 
@@ -34,14 +54,14 @@
     @apply w-2;
   }
   ::-webkit-scrollbar-track {
-    background-color: var(--dao-bg-2);
+    background-color: rgb(var(--dao-bg-2));
   }
   ::-webkit-scrollbar-thumb {
-    background-color: var(--dao-border);
+    background-color: rgb(var(--dao-border));
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-primary-700;
+    @apply bg-primary-500;
   }
 
   ::selection {
@@ -64,13 +84,13 @@
     @apply transition-all duration-300 hover:-translate-y-1 hover:border-primary-500/40 hover:shadow-dao-card;
   }
   .eyebrow {
-    @apply inline-flex items-center gap-2 text-xs font-mono uppercase tracking-[0.25em] text-primary-400;
+    @apply inline-flex items-center gap-2 text-xs font-mono uppercase tracking-[0.25em] text-primary-600 dark:text-primary-400;
   }
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-br from-white via-primary-200 to-accent-300;
+    @apply bg-clip-text text-transparent bg-gradient-to-br from-primary-700 via-primary-500 to-accent-600 dark:from-white dark:via-primary-200 dark:to-accent-300;
   }
   .text-gradient-quai {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-300 via-white to-quai;
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 via-dao-text to-quai dark:from-primary-300;
   }
   .section {
     @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
@@ -99,21 +119,21 @@
 
 /* ── Docs prose (Tailwind Typography, themed to design tokens) ── */
 .prose-dao {
-  @apply prose prose-invert max-w-none;
-  --tw-prose-body: var(--dao-text-secondary);
-  --tw-prose-headings: var(--dao-text);
-  --tw-prose-bold: var(--dao-text);
-  --tw-prose-links: #a5b4fc;
-  --tw-prose-quotes: var(--dao-text-secondary);
-  --tw-prose-bullets: #4f46e5;
-  --tw-prose-counters: var(--dao-text-muted);
-  --tw-prose-hr: var(--dao-border);
-  --tw-prose-quote-borders: #4f46e5;
-  --tw-prose-th-borders: var(--dao-border);
-  --tw-prose-td-borders: var(--dao-border);
-  --tw-prose-code: #c7d2fe;
+  @apply prose max-w-none dark:prose-invert;
+  --tw-prose-body: rgb(var(--dao-text-secondary));
+  --tw-prose-headings: rgb(var(--dao-text));
+  --tw-prose-bold: rgb(var(--dao-text));
+  --tw-prose-links: rgb(var(--dao-link));
+  --tw-prose-quotes: rgb(var(--dao-text-secondary));
+  --tw-prose-bullets: #6366f1;
+  --tw-prose-counters: rgb(var(--dao-text-muted));
+  --tw-prose-hr: rgb(var(--dao-border));
+  --tw-prose-quote-borders: #6366f1;
+  --tw-prose-th-borders: rgb(var(--dao-border));
+  --tw-prose-td-borders: rgb(var(--dao-border));
+  --tw-prose-code: rgb(var(--dao-link));
   --tw-prose-pre-bg: #0c0c16;
-  --tw-prose-pre-code: var(--dao-text-secondary);
+  --tw-prose-pre-code: #d1d5db;
 }
 .prose-dao :where(h1, h2, h3, h4) {
   @apply font-display tracking-tight scroll-mt-24;
@@ -122,14 +142,14 @@
   @apply mt-12 border-t border-dao-border/50 pt-8;
 }
 .prose-dao a {
-  @apply font-medium no-underline transition-colors hover:text-primary-200;
+  @apply font-medium no-underline transition-colors hover:opacity-80;
 }
 /* autolinked heading anchors should not look like body links */
 .prose-dao :where(h1, h2, h3, h4) a {
   @apply text-inherit no-underline hover:text-inherit;
 }
 .prose-dao :where(code):not(pre code) {
-  @apply rounded-md border border-dao-border bg-dao-dark-3 px-1.5 py-0.5 font-mono text-[0.85em] text-primary-200;
+  @apply rounded-md border border-dao-border bg-dao-dark-3 px-1.5 py-0.5 font-mono text-[0.85em] text-primary-700 dark:text-primary-200;
 }
 .prose-dao :where(code):not(pre code)::before,
 .prose-dao :where(code):not(pre code)::after {

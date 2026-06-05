@@ -29,25 +29,25 @@ const config: Config = {
           hot: "#ff5240",
           deep: "#7a0808",
         },
-        // Literal hex (dark-only site) so Tailwind can generate /opacity variants.
-        // CSS vars in globals.css remain for direct-reference uses (gradients, shadows).
+        // Channel-based CSS vars → supports both /opacity modifiers AND the
+        // light/dark theme flip (vars defined in globals.css :root + .dark).
         dao: {
-          "dark-1": "#0a0a12",
-          "dark-2": "#0f0f1a",
-          "dark-3": "#161625",
-          "dark-4": "#1e1e30",
-          surface: "#252540",
-          border: "#2e2e4a",
-          text: "#f3f4f6",
-          "text-secondary": "#d1d5db",
-          "text-muted": "#9ca3af",
-          "text-hint": "#6b7280",
+          "dark-1": "rgb(var(--dao-bg-1) / <alpha-value>)",
+          "dark-2": "rgb(var(--dao-bg-2) / <alpha-value>)",
+          "dark-3": "rgb(var(--dao-bg-3) / <alpha-value>)",
+          "dark-4": "rgb(var(--dao-bg-4) / <alpha-value>)",
+          surface: "rgb(var(--dao-surface) / <alpha-value>)",
+          border: "rgb(var(--dao-border) / <alpha-value>)",
+          text: "rgb(var(--dao-text) / <alpha-value>)",
+          "text-secondary": "rgb(var(--dao-text-secondary) / <alpha-value>)",
+          "text-muted": "rgb(var(--dao-text-muted) / <alpha-value>)",
+          "text-hint": "rgb(var(--dao-text-hint) / <alpha-value>)",
         },
       },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
-        "gradient-dao": "linear-gradient(135deg, var(--dao-bg-1) 0%, var(--dao-bg-2) 25%, var(--dao-bg-3) 50%, var(--dao-bg-2) 75%, var(--dao-bg-1) 100%)",
-        "gradient-dao-radial": "radial-gradient(ellipse at center, var(--dao-bg-3) 0%, var(--dao-bg-1) 100%)",
+        "gradient-dao": "linear-gradient(135deg, rgb(var(--dao-bg-1)) 0%, rgb(var(--dao-bg-2)) 25%, rgb(var(--dao-bg-3)) 50%, rgb(var(--dao-bg-2)) 75%, rgb(var(--dao-bg-1)) 100%)",
+        "gradient-dao-radial": "radial-gradient(ellipse at center, rgb(var(--dao-bg-3)) 0%, rgb(var(--dao-bg-1)) 100%)",
       },
       boxShadow: {
         "indigo-glow": "0 0 20px rgba(99,102,241,var(--dao-glow-strength)), 0 0 40px rgba(99,102,241,calc(var(--dao-glow-strength)*0.33))",

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Menu, X, ArrowUpRight } from "lucide-react";
 import { clsx } from "clsx";
 import { Logo } from "./Logo";
+import { ThemeToggle } from "./ThemeToggle";
 import { nav, site } from "@/lib/site";
 
 export function Nav() {
@@ -60,6 +61,7 @@ export function Nav() {
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
+          <ThemeToggle />
           <a href={site.exploreUrl} className="btn-secondary !px-4 !py-2 text-sm">
             Explore
           </a>
@@ -69,14 +71,17 @@ export function Nav() {
           </a>
         </div>
 
-        <button
-          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-dao-border text-dao-text md:hidden"
-          onClick={() => setOpen((v) => !v)}
-          aria-label={open ? "Close menu" : "Open menu"}
-          aria-expanded={open}
-        >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        <div className="flex items-center gap-2 md:hidden">
+          <ThemeToggle />
+          <button
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-dao-border text-dao-text"
+            onClick={() => setOpen((v) => !v)}
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </nav>
 
       {open && (

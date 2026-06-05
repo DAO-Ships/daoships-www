@@ -7,13 +7,20 @@ See [`PLAN.md`](./PLAN.md) for the full strategy, sitemap, content outline, and 
 
 ## Stack
 
-- **Next.js 15** (App Router) · **React 19** · **TypeScript**
+- **Next.js 15.5** (App Router) · **React 19** · **TypeScript**
 - **Tailwind CSS 3.4** — design tokens ported from `daoships-app` (indigo/cyan helm system,
   with Quai-red ecosystem accents)
+- **Light + dark themes** — `dao-*` palette is channel-based CSS vars that flip on a `.dark`
+  class. Defaults to the user's system preference (no-flash inline script in `app/layout.tsx`),
+  with a single toggle in the nav (`components/ThemeToggle.tsx`) that persists to `localStorage`.
 - **Framer Motion** for scroll reveals · **lucide-react** icons
 - Fonts: Space Grotesk (display), Inter (body), JetBrains Mono (code)
 - Live stats via the DAO Ships **Supabase** indexer (graceful fallback when unconfigured)
 - Deploys on **Vercel**
+
+> Security: `next`/`@next/mdx` pinned to the **15.5.x** security-backport line and a
+> `postcss` override (`^8.5.15`) keep `npm audit` at **0 vulnerabilities**. A Next 16
+> migration is deferred (some newest advisories are only fixed in 16.x).
 
 ## Develop
 
