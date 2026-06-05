@@ -1,0 +1,108 @@
+export const metadata = {
+  title: "Quorum, Grace & Retention",
+  description:
+    "The governance parameters that tune a DAO Ships ship — quorum, grace period, retention veto, sponsor threshold, and voting period — explained in plain English, including basis points.",
+};
+
+# Quorum, Grace & Retention
+
+A ship's character — fast and trusting, or slow and careful — comes down to a handful of
+**governance parameters** set at launch and changeable later by a passed proposal. This page
+explains each one and, just as importantly, the number format they use.
+
+## First: what is a basis point?
+
+Several parameters are expressed in **basis points**, not percentages. A basis point is
+one-hundredth of one percent, so the scale runs from `0` to `10000`:
+
+| Basis points | Percentage |
+| --- | --- |
+| `10000` | 100% |
+| `6600` | 66% |
+| `2000` | 20% |
+| `1000` | 10% |
+| `0` | 0% |
+
+<Callout type="danger" title="Read this twice">
+Pass `2000` for 20%, not `20`. Passing a raw percentage like `20` is read as 0.2% — a critical
+misconfiguration that creates a near-zero threshold. When a parameter says "basis points," multiply
+your intended percent by 100.
+</Callout>
+
+## The parameters
+
+### votingPeriod
+
+How long the **Voting** window stays open, in seconds. The contract enforces a floor of
+`MIN_VOTING_PERIOD = 60` seconds (built for fast agent DAOs) and a ceiling of one year. Human-facing
+DAOs should set this to at least `86400` seconds (24 hours) so every member has time to see and vote.
+
+### sponsorThreshold
+
+The minimum Shares an address must hold to **sponsor** a proposal and open its vote. This keeps
+drive-by sponsorship from minimal holders out. It is denominated in Share units (not basis points).
+
+<Callout type="warning" title="Never set sponsorThreshold equal to total supply">
+If `sponsorThreshold` equals the current total Share supply, a later token burn can drop supply below
+the threshold and permanently deadlock sponsorship. The system caps the effective threshold at the
+current supply to prevent the worst case, but keep the configured value comfortably below supply.
+</Callout>
+
+### quorumPercent (basis points)
+
+The minimum share of voting power that must vote **yes** for a proposal to pass. Expressed in basis
+points: `2000` means at least 20% of the Shares (measured at sponsor time) must back the proposal.
+Setting `quorumPercent = 0` means any proposal with a single yes vote and a simple majority passes —
+appropriate only for tiny, high-trust crews.
+
+### gracePeriod
+
+After voting ends, the **Grace** period is the window in which members who dislike the outcome can
+[ragequit](/docs/concepts/ragequit) — leave with their fair share of the treasury — *before* the
+proposal executes. In seconds; floor of `0`, ceiling of one year.
+
+<Callout type="tip" title="A good rule of thumb">
+Set `gracePeriod` greater than or equal to `votingPeriod`. That guarantees members always have at
+least as long to exit as the vote itself ran. A `gracePeriod` of `0` means proposals execute the
+instant voting ends, leaving no exit window at all.
+</Callout>
+
+### minRetentionPercent (basis points) — the ragequit veto
+
+This is the cleverest parameter. During grace, members can ragequit. If *enough* of them leave —
+enough that the remaining Shares-plus-Loot supply falls below `minRetentionPercent` of the peak
+supply during the vote — the proposal is **blocked at processing time**. This turns mass exit into a
+veto: a contentious proposal that drives a quarter of the crew overboard simply does not execute.
+
+A common value is `6600` (66%), meaning a 34% exit blocks the proposal. Investment DAOs often set it
+higher (`7500`); set it to `0` to disable the veto entirely (suitable only for automated agent DAOs
+where members never ragequit).
+
+### defaultExpiryWindow
+
+How long a passed proposal stays processable before it auto-expires into the terminal **Expired**
+state. This prevents "zombie" proposals — passed but never executed — from lingering forever. If left
+at `0`, the system falls back to `2 × (votingPeriod + gracePeriod)`.
+
+## Putting it together
+
+These five tunables define a ship's whole governance feel:
+
+| Parameter | Units | Controls |
+| --- | --- | --- |
+| `votingPeriod` | seconds | How long voting stays open |
+| `sponsorThreshold` | Share units | Who can open a vote |
+| `quorumPercent` | basis points | Minimum yes-support to pass |
+| `gracePeriod` | seconds | The exit window before execution |
+| `minRetentionPercent` | basis points | How much exit triggers the veto |
+| `defaultExpiryWindow` | seconds | When an unprocessed pass auto-expires |
+
+A 5-person startup might run a 1-day vote with 50% quorum and a 66% retention veto. A 200-member
+protocol might run a 5-day vote with 10% quorum (because participation is realistically lower at
+scale) and a 50% veto. An automated agent collective might run a 5-minute vote with a 1-minute grace
+and no veto at all.
+
+## Related
+
+The retention veto only works because members can actually leave. See exactly how that works in
+[Ragequit](/docs/concepts/ragequit).

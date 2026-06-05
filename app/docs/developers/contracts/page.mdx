@@ -1,0 +1,129 @@
+export const metadata = {
+  title: "Contract Reference",
+  description:
+    "Canonical deployed addresses, network details, and the role and key functions of every DAO Ships contract on Quai Cyprus-1.",
+};
+
+# Contract Reference
+
+This page lists the **canonical deployed addresses** for the DAO Ships protocol, the network
+they live on, and what each contract does. The addresses below come from
+`deployment-addresses.json` in the contracts repository and match the addresses the live app
+uses in `src/config/contracts.ts`.
+
+<Callout type="warning" title="Trust deployment-addresses.json">
+Some older docs in the repositories contain stale address sets from earlier redeployments.
+The addresses on this page are the canonical deployment. If a value disagrees with another
+file, prefer the ones here.
+</Callout>
+
+## Network
+
+| Property | Value |
+|----------|-------|
+| Network | Quai Orchard Testnet (Cyprus-1) |
+| Chain ID | `15000` |
+| RPC URL | `https://rpc.cyprus1.colosseum.quai.network` |
+| Block explorer | `https://cyprus1.colosseum.quaiscan.io` |
+| Native currency | QUAI (18 decimals) |
+| Solidity | `0.8.22` |
+| OpenZeppelin | v5 |
+
+Cyprus-1 uses a sharded address scheme — all addresses on this shard begin with the `0x00`
+prefix, which is why deployment relies on CREATE2 salt mining (see
+[Launch from TypeScript](/docs/developers/launch-from-typescript)).
+
+## Deployed addresses
+
+| Contract | Address | Role |
+|----------|---------|------|
+| `Poster` | `0x005C3957b8f612BBcdCFCbeDb8C53C3d3b3FEEdc` | EIP-3722 metadata bus |
+| `DAOShipSingleton` | `0x0034B574bDC240d37b6F08248Ae069727164002C` | Logic for `DAOShip` clones |
+| `SharesERC20Singleton` | `0x00366CedcB0B99A9E5Dfb9B7dE1484A895118235` | Logic for voting-token clones |
+| `LootERC20Singleton` | `0x00521258bBD3B23Bc10c3Fc77d360Df4379dE054` | Logic for loot-token clones |
+| `DAOShipLauncher` | `0x00487182EA7a7881d84C63099001B0195a41BFB3` | Clone factory (DAO + tokens) |
+| `DAOShipAndVaultLauncher` | `0x0036B11eEC6aa17407b0e157fA9caa32b7EFC9D1` | Atomic factory (DAO + vault) |
+
+The app also references this Quai Vault infrastructure, pre-deployed by the Quai Vault project:
+
+| Contract | Address | Role |
+|----------|---------|------|
+| `QuaiVaultFactory` | `0x002d1305D597c157bB975967FA2e5337674b0E5F` | Creates vault (avatar) proxies |
+| `VaultSingleton` | `0x004E539Cf477A5Cb456A56023f083cD91Bc4934e` | Quai Vault implementation |
+| `MultiSendCallOnly` | `0x002ae8A47C2da497fe569AfCF0486410aA1093E0` | Batched-call DelegateCall target |
+
+The deployer of the canonical set is `0x0006506bDE7140b85DED58a40D7444F84cde4821`.
+
+## Contract roles and key functions
+
+### DAOShip
+
+The governance engine. Deployed as an EIP-1167 clone of `DAOShipSingleton`. Holds no funds —
+all treasury actions execute against the vault via `execTransactionFromModule`.
+
+Key functions:
+
+```solidity
+function submitProposal(bytes calldata proposalData, uint32 expiration, string calldata details) external payable returns (uint32);
+function sponsorProposal(uint32 id) external;
+function submitVote(uint32 id, bool approved) external;
+function processProposal(uint32 id, bytes calldata proposalData) external;
+function ragequit(address to, uint256 sharesToBurn, uint256 lootToBurn, address[] calldata tokens) external;
+function setNavigators(address[] calldata navigators, uint256[] calldata permissions) external; // governanceOnly
+function setGuildTokens(address[] calldata tokens, bool[] calldata enabled) external;           // governanceOnly
+function setGovernanceConfig(bytes calldata governanceConfig) external;                          // onlyGovernor
+```
+
+Permission constants: `ADMIN = 1`, `MANAGER = 2`, `GOVERNOR = 4`, `MAX_PERMISSION = 7`. The
+`governanceOnly` modifier requires `msg.sender == address(this)` — i.e. the call must arrive
+through a passed proposal.
+
+### DAOShipLauncher
+
+EIP-1167 clone factory for `DAOShip`, `SharesERC20`, and `LootERC20`. Exposes
+`launchDAOShip(...)` and `calculateAddresses(sender, sharesSalt, lootSalt, daoShipSalt)` for
+deterministic address prediction.
+
+### DAOShipAndVaultLauncher
+
+The atomic factory most callers use. One transaction predicts the `DAOShip` address, creates
+the Quai Vault with `DAOShip` pre-enabled as a module, then launches `DAOShip` with the vault as
+its avatar. Key functions:
+
+```solidity
+function launchDAOShipAndVault(
+    bytes calldata initializationParamsTemplate,
+    string calldata shareTokenName, string calldata shareTokenSymbol,
+    string calldata lootTokenName, string calldata lootTokenSymbol,
+    address[] calldata vaultOwners, uint256 vaultThreshold,
+    uint256 vaultSalt, uint256 sharesSalt, uint256 lootSalt, uint256 daoShipSalt
+) external returns (address payable daoShip, address vault);
+
+function calculateAllAddresses(
+    address sender,
+    uint256 sharesSalt, uint256 lootSalt, uint256 daoShipSalt, uint256 vaultSalt,
+    address[] calldata vaultOwners, uint256 vaultThreshold, uint32 minExecutionDelay
+) external view returns (address daoShip, address shares, address loot, address vault);
+```
+
+It emits `LaunchDAOShipAndVault(daoShip, vault, shares, loot, newVault, launcher)`.
+
+### SharesERC20 and LootERC20
+
+`SharesERC20` is the voting token with timestamp checkpoints and auto-delegation; `LootERC20` is
+the non-voting economic token. Both are minted and burned only by `DAOShip` (or a `MANAGER`
+navigator) via `mintShares` / `mintLoot` and the corresponding burns. The protocol caps a DAO at
+`MAX_GUILD_TOKENS = 20` ragequit tokens.
+
+### Poster
+
+An [EIP-3722](https://eips.ethereum.org/EIPS/eip-3722) content bus that emits `NewPost` and
+stores no state, so a post costs around `25K` gas regardless of content length:
+
+```solidity
+function post(string content, string tag) external;
+event NewPost(address indexed user, string content, string indexed tag);
+```
+
+Indexers filter on `tag` (for example `daoships.launcher.daoProfile`) to attach metadata to DAOs,
+proposals, and members. See the [Indexer](/docs/developers/indexer) page for how these are stored.

@@ -1,0 +1,81 @@
+export const metadata = {
+  title: "Vote and Delegate",
+  description:
+    "How to vote yes or no on a DAO Ships proposal, read the tally and quorum, post a vote reason, and delegate your voting power to another member.",
+};
+
+# Vote and Delegate
+
+Voting is how members steer the ship. This guide covers casting a yes or no vote, reading the live tally and quorum, explaining your reasoning on-chain, and handing your voting power to someone you trust through delegation. Your voting weight comes from your **Shares** — Loot does not vote.
+
+<Callout type="info" title="What counts as your vote weight">
+Your weight is the voting power you held when voting opened, captured by a timestamped snapshot. Acquiring Shares after a vote starts won't change your weight for that proposal.
+</Callout>
+
+## Step 1: Open a proposal in voting
+
+1. Go to your DAO's **Proposals** tab.
+2. Open a proposal showing the **voting** status.
+3. Confirm the voting window is still open — you can only vote before it closes.
+
+## Step 2: Cast your vote
+
+1. Read the title, description, and any discussion link.
+2. Click **Vote Yes** or **Vote No**.
+3. Approve the transaction in your wallet.
+
+Your vote is weighted by your Shares automatically. Each address votes once per proposal.
+
+<Callout type="tip" title="No Shares, no vote">
+If you hold only Loot, you can't vote. Loot is economic stake without governance power. See [Shares vs. Loot](/docs/concepts/shares-vs-loot).
+</Callout>
+
+## Step 3: Read the tally and quorum
+
+The proposal page shows the live state of the vote.
+
+- **Yes balance / No balance** — the total Shares weight on each side.
+- **Yes votes / No votes** — the headcount of voters on each side.
+- **Quorum** — how close the vote is to the `quorumPercent` minimum participation needed for the result to count.
+
+A proposal passes only if it has more yes weight than no weight **and** meets quorum. If quorum isn't reached by the time voting ends, the proposal can't pass even with all-yes votes. For the full mechanics, see [Quorum, Grace & Retention](/docs/concepts/quorum-grace-retention).
+
+## Step 4: Post a vote reason (optional)
+
+You can explain your vote on-chain so other members understand your thinking.
+
+1. After voting, look for the **Add reason** option on the proposal.
+2. Write a short explanation.
+3. Submit it — your reason is posted on-chain and shown alongside your vote.
+
+Vote reasons build a transparent record of why decisions went the way they did, which is especially valuable in larger DAOs.
+
+## Delegation: lending your voting power
+
+You don't have to vote on everything yourself. **Delegation** lets you assign your Shares' voting power to another member who votes on your behalf. You keep your tokens and your full economic claim — only the *vote* moves.
+
+<Callout type="info" title="Shares delegate, Loot does not">
+Only Shares carry delegatable voting power. When Shares are first minted to a new address, that address auto-delegates to itself, so you can vote immediately.
+</Callout>
+
+### Step 1: Open delegation
+
+1. Go to your DAO's **Members** tab.
+2. Find the **delegates** view or your own member card.
+3. Open the delegation control.
+
+### Step 2: Choose a delegate
+
+1. Enter the Cyprus-1 address of the member you want to delegate to.
+2. Confirm and approve the transaction.
+
+Your voting power now flows to that member. They vote with it; you can reclaim it any time by delegating back to yourself.
+
+<Callout type="tip" title="Why delegation matters at scale">
+In bigger DAOs, passive holders delegating to a handful of active members is often the only reliable way to hit quorum. A council of 10 to 15 active delegates can carry votes for hundreds of holders.
+</Callout>
+
+## Related
+
+- [Create Your First Proposal](/docs/guides/first-proposal) — put something to a vote.
+- [Choosing Governance Parameters](/docs/guides/governance-parameters) — set quorum and timing.

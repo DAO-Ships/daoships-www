@@ -1,0 +1,96 @@
+export const metadata = {
+  title: "Ragequit — Your Exit Right",
+  description:
+    "How ragequit lets any DAO Ships member burn their Shares and Loot during the grace period to leave with a proportional slice of the treasury.",
+};
+
+# Ragequit — Your Exit Right
+
+The single most important protection for a DAO Ships member is the right to **leave with your money**.
+If the crew votes for something you strongly disagree with, you are never trapped. You can **ragequit**:
+burn your tokens and walk away with your fair share of the treasury, on your own terms.
+
+<Callout type="info" title="The one-sentence version">
+Ragequit lets you burn your Shares and Loot in exchange for a proportional slice of the DAO's
+treasury — and during a proposal's grace period, enough exits can even veto the proposal outright.
+</Callout>
+
+## How it works
+
+When you ragequit, you specify how many Shares and how much Loot to burn, and which treasury assets
+you want your share of. In one transaction:
+
+1. Your chosen Shares and Loot are **burned**.
+2. The contract calculates your **proportional share** of each requested asset — your burned tokens
+   divided by the total Shares-plus-Loot supply.
+3. The treasury (your ship's [Quai Vault](/docs/concepts/quai-vault-treasury)) **transfers that share
+   to you**.
+
+If you burn 5% of the total Shares-and-Loot supply, you receive 5% of every asset you claim. Simple,
+fair, and impossible to block by a vote.
+
+```ts
+// Burn 50 Shares and 25 Loot, receive a proportional slice of native QUAI
+await daoShip.ragequit(
+  memberAddress,
+  parseQuai("50"),       // shares to burn
+  parseQuai("25"),       // loot to burn
+  [ZeroAddress],         // address(0) means native QUAI
+);
+```
+
+## When can you ragequit?
+
+You can ragequit at any time, but it carries the most weight **during a proposal's grace period** —
+the window after voting ends and before the action executes. That is your moment to exit *ahead of* a
+decision you reject, taking your assets with you before the proposal can spend them. See the
+[Proposal Lifecycle](/docs/concepts/proposal-lifecycle) for where grace fits.
+
+## Ragequit as a veto
+
+Exiting is not just a personal escape hatch — collectively it is a **governance check**. If enough
+members ragequit during grace that the remaining supply drops below the `minRetentionPercent`
+threshold, the proposal is **blocked at processing time**. A decision unpopular enough to send a
+large minority overboard simply does not execute. This is covered in
+[Quorum, Grace & Retention](/docs/concepts/quorum-grace-retention).
+
+<Callout type="tip" title="The retention check protects you twice">
+Ragequit checks retention as well. You cannot collectively exit so far that the DAO falls below its
+minimum — the threshold protects the remaining crew just as it protects the leavers.
+</Callout>
+
+## Guild tokens — what you can claim
+
+You don't automatically get a slice of *everything* in the vault. The DAO maintains a list of
+**guild tokens**: the specific assets that are claimable during ragequit. This list is set by a
+governance proposal, not by any single party.
+
+- **`address(0)` represents native QUAI.** It is *not* included by default — the DAO must explicitly
+  add it via governance if members should be able to ragequit into QUAI.
+- The list is capped at **`MAX_GUILD_TOKENS = 20`**. The vault can hold unlimited tokens for treasury
+  purposes, but only up to 20 are ragequit-eligible. The cap exists because each token claimed costs a
+  balance lookup plus a transfer — too many would run out of gas in a single exit.
+
+| | Guild tokens | All vault holdings |
+| --- | --- | --- |
+| Claimable on ragequit | Yes | No |
+| Maximum count | 20 | Unlimited |
+| Set by | Governance proposal | Anyone can send assets in |
+
+## A member-controlled safety valve
+
+`ragequit` lets *you* choose which tokens to claim. If one guild token is broken or malicious — say
+its transfer always reverts — you can simply **omit it** from your claim and still exit with your
+share of everything else. A single bad token can never lock you in entirely; at worst you forfeit your
+slice of that one asset.
+
+<Callout type="warning" title="Use an EOA as the recipient">
+Send your ragequit proceeds to a normal wallet (an externally owned account), not a contract. A
+contract recipient can run code during the withdrawal, which — while guarded against reentrancy — is
+an avoidable complication.
+</Callout>
+
+## Related
+
+Your ragequit assets come straight out of the treasury. See how that treasury is secured in
+[The Quai Vault Treasury](/docs/concepts/quai-vault-treasury).

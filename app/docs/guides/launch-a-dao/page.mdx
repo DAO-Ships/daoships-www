@@ -1,0 +1,102 @@
+export const metadata = {
+  title: "Launch a DAO",
+  description:
+    "A step-by-step walkthrough of the DAO Ships 7-step launch wizard — from basic info to the deploy transaction that creates your ship, tokens, and treasury.",
+};
+
+# Launch a DAO
+
+Launching a DAO Ships ship means deploying a complete on-chain organization — governance, two tokens, and a secured treasury — in a single transaction. The app guides you through it with a **7-step wizard** at [app.daoships.xyz/launch](https://app.daoships.xyz/launch). This guide walks each step, explains what every field means, and offers sane defaults so you can launch with confidence.
+
+<Callout type="tip" title="Your progress is saved">
+You can leave the wizard and come back — progress is saved locally in your browser. Take your time on the parts that matter.
+</Callout>
+
+Before you start, make sure your [wallet is set up](/docs/guides/wallet-setup) and funded with testnet QUAI on Cyprus-1.
+
+## Step 1: Basic Info
+
+Give your ship its identity.
+
+1. **Name** — the public name of your DAO.
+2. **Description** — a sentence or two on what the DAO does. This appears on your DAO's profile.
+3. **Avatar URL** — an optional image link (`https://` or `ipfs://`) for your DAO's logo.
+
+These details are posted on-chain as your initial DAO profile and can be updated later through governance.
+
+## Step 2: Members
+
+Add your founding crew and their starting balances.
+
+1. Enter each founding member's Cyprus-1 address (starts with `0x00`).
+2. Assign each member an amount of **Shares** (voting power) and/or **Loot** (economic stake only).
+3. Add as many founders as you need.
+
+A common starting point is equal Shares for all founders — for example, `100` Shares each. Use Loot for advisors or contributors who should share in the treasury without a vote. See [Shares vs. Loot](/docs/concepts/shares-vs-loot) for the full picture.
+
+<Callout type="info" title="Why give Loot at all?">
+Loot lets you reward someone economically without handing them governance power. It still counts toward their ragequit payout.
+</Callout>
+
+## Step 3: Governance
+
+Set the rules that control how proposals pass. This is the most consequential step.
+
+- `votingPeriod` — how long voting stays open.
+- `gracePeriod` — the window after a vote where members can exit before the action executes.
+- `quorumPercent` — minimum participation for a vote to count, in basis points (`2000` = 20%).
+- `sponsorThreshold` — minimum Shares needed to sponsor a proposal onto the ballot.
+- `minRetentionPercent` — protects the DAO from being drained by mass exit.
+- `proposalOffering` — an optional anti-spam deposit to submit a proposal.
+
+Don't guess at these — we have a dedicated guide with five ready-made templates. See [Choosing Governance Parameters](/docs/guides/governance-parameters) and [Quorum, Grace & Retention](/docs/concepts/quorum-grace-retention).
+
+## Step 4: Navigators
+
+Navigators are permissioned plug-ins that can mint tokens, pause transfers, or adjust governance — without a full proposal each time.
+
+1. Optionally add an **OnboarderNavigator** to let new members join by paying QUAI tribute.
+2. Configure caps and allowlists if you want to bound dilution.
+
+You can skip this step entirely and run everything through governance proposals at first. Navigators can be added later. Learn more in [Navigators](/docs/concepts/navigators).
+
+## Step 5: Guild Tokens
+
+Guild tokens are the assets members receive a proportional slice of when they [ragequit](/docs/concepts/ragequit).
+
+1. Add native QUAI by including the zero address (`address(0)`).
+2. Add any ERC-20 tokens your treasury will hold.
+
+You can register up to **20** guild tokens. Most DAOs start with just QUAI and add more as the treasury grows.
+
+## Step 6: Vault
+
+Your treasury lives in a **Quai Vault** — a hardened M-of-N multisig, not a bare contract.
+
+1. Choose the **vault owners** (typically your most trusted founders).
+2. Set the **threshold** — how many owners must sign (for example, `3` of `5`).
+
+The launcher automatically wires the vault to work with the DAO. See [Quai Vault Treasury](/docs/concepts/quai-vault-treasury) for why this matters.
+
+## Step 7: Review
+
+The final step shows everything in one place.
+
+1. Re-read your governance parameters carefully — especially the basis-point values.
+2. Confirm member balances and vault owners.
+3. Click **Deploy** and approve the transaction in your wallet.
+
+<Callout type="warning" title="Double-check basis points">
+A `quorumPercent` of `20` means 0.2%, not 20%. For 20% you want `2000`. This is the single most common launch mistake.
+</Callout>
+
+## What gets created
+
+When the deploy transaction confirms, four contracts come into existence and are linked together:
+
+- A **DAOShip** — the governance core that runs proposals and voting.
+- A **SharesERC20** token — voting power for your members.
+- A **LootERC20** token — non-voting economic stake.
+- A **Quai Vault** — your multisig treasury, owned by the DAO.
+
+Your ship is live. Next, create your [first proposal](/docs/guides/first-proposal).

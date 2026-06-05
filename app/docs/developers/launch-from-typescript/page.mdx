@@ -1,0 +1,186 @@
+export const metadata = {
+  title: "Launch a DAO from TypeScript",
+  description:
+    "Deploy a complete DAO Ships ship programmatically with the quais SDK — encode init params, mine CREATE2 salts for the 0x00 shard, launch, then post metadata via Poster.",
+};
+
+# Launch a DAO from TypeScript
+
+This guide walks through deploying a complete DAO — a Quai Vault treasury, a `DAOShip`
+governance module, and the `SharesERC20` / `LootERC20` tokens — in a single transaction using the
+[quais](https://www.npmjs.com/package/quais) SDK. Then you submit a proposal and attach metadata
+via `Poster`.
+
+Everything targets **Quai Cyprus-1, chain ID `15000`**. Use the canonical addresses from
+[Contracts](/docs/developers/contracts).
+
+## 1. Encode the governance config
+
+Governance parameters are ABI-encoded into a single `bytes` blob. All percentages are **basis
+points** (`10000 = 100%`).
+
+```ts
+import { quais } from "quais";
+
+const governanceConfig = quais.AbiCoder.defaultAbiCoder().encode(
+  ["uint32", "uint32", "uint256", "uint256", "uint256", "uint256"],
+  [
+    7 * 24 * 3600,          // votingPeriod: 7 days
+    3 * 24 * 3600,          // gracePeriod: 3 days
+    quais.parseQuai("0.1"), // proposalOffering
+    2000,                   // quorumPercent: 20% (basis points)
+    quais.parseQuai("1"),   // sponsorThreshold: 1 share
+    6600,                   // minRetentionPercent: 66%
+  ],
+);
+```
+
+<Callout type="danger" title="Basis points, not percentages">
+Pass `2000` for 20%, `10000` for 100%. Passing a raw percentage like `20` creates a near-zero
+threshold — a critical misconfiguration.
+</Callout>
+
+## 2. Encode the init params template
+
+`launchDAOShipAndVault` takes an init-params *template*. You set the `avatar` (3rd field) to a
+placeholder — the launcher overwrites it with the real vault address before launch. The token
+addresses are likewise filled in by the launcher.
+
+```ts
+const MULTISEND = "0x002ae8A47C2da497fe569AfCF0486410aA1093E0"; // MultiSendCallOnly
+const founder = "0xYourFounderAddress";
+
+const initParamsTemplate = quais.AbiCoder.defaultAbiCoder().encode(
+  ["address","address","address","address","bytes","address[]","uint256[]","address[]","uint256[]","uint256[]","address[]","bool","bool"],
+  [
+    quais.ZeroAddress,         // lootToken   (filled by launcher)
+    quais.ZeroAddress,         // sharesToken (filled by launcher)
+    quais.ZeroAddress,         // avatar      (placeholder -> vault)
+    MULTISEND,                 // multisend library
+    governanceConfig,
+    [],                        // navigators
+    [],                        // navigator permissions
+    [founder],                 // initial members
+    [quais.parseQuai("100")],  // initial shares
+    [quais.parseQuai("0")],    // initial loot
+    [],                        // guild tokens
+    false,                     // pauseSharesOnLaunch
+    false,                     // pauseLootOnLaunch
+  ],
+);
+```
+
+## 3. Mine CREATE2 salts for the 0x00 shard
+
+Cyprus-1 requires every contract address to begin with the `0x00` shard prefix. Because the
+clones are deployed via CREATE2, you mine salts off-chain until
+`calculateAllAddresses` returns four addresses that all start with `0x00`.
+
+`minExecutionDelay` **must be `0`** here — `launchDAOShipAndVault` hardcodes `0`, so any other
+value produces a vault prediction that will not match the deployed address.
+
+```ts
+const launcher = new quais.Contract(
+  "0x0036B11eEC6aa17407b0e157fA9caa32b7EFC9D1", // DAOShipAndVaultLauncher
+  DAOSHIP_AND_VAULT_LAUNCHER_ABI,
+  signer,
+);
+
+const vaultOwners = [founder];
+const vaultThreshold = 1;
+
+function startsWith00(addr: string): boolean {
+  return addr.toLowerCase().startsWith("0x00");
+}
+
+async function mineSalts(sender: string) {
+  for (let i = 0; ; i++) {
+    const sharesSalt = BigInt(i) * 4n + 0n;
+    const lootSalt = BigInt(i) * 4n + 1n;
+    const daoShipSalt = BigInt(i) * 4n + 2n;
+    const vaultSalt = BigInt(i) * 4n + 3n;
+
+    const [daoShip, shares, loot, vault] = await launcher.calculateAllAddresses(
+      sender, sharesSalt, lootSalt, daoShipSalt, vaultSalt,
+      vaultOwners, vaultThreshold, 0, // minExecutionDelay must be 0
+    );
+
+    if ([daoShip, shares, loot, vault].every(startsWith00)) {
+      return { sharesSalt, lootSalt, daoShipSalt, vaultSalt, daoShip, shares, loot, vault };
+    }
+  }
+}
+```
+
+<Callout type="tip" title="Mine in a worker">
+The live app runs salt mining in a Web Worker so the UI stays responsive. For server scripts,
+prefer a local prediction routine over an RPC round-trip per attempt when you have the singleton
+addresses and creation bytecode.
+</Callout>
+
+## 4. Launch
+
+Pass the mined salts to `launchDAOShipAndVault`. The `sender` you mined against **must** equal
+the transaction sender, or the predicted addresses will not match.
+
+```ts
+const salts = await mineSalts(await signer.getAddress());
+
+const tx = await launcher.launchDAOShipAndVault(
+  initParamsTemplate,
+  "MyDAO Shares", "MDS",
+  "MyDAO Loot", "MDL",
+  vaultOwners, vaultThreshold,
+  salts.vaultSalt, salts.sharesSalt, salts.lootSalt, salts.daoShipSalt,
+);
+const receipt = await tx.wait();
+// Event: LaunchDAOShipAndVault(daoShip, vault, shares, loot, newVault, launcher)
+```
+
+After this transaction, `DAOShip` is already enabled as a module on the vault — there is no
+separate `enableModule` step.
+
+## 5. Submit a proposal
+
+Proposals carry a MultiSend-encoded batch of vault actions. Here we send 10 QUAI from the
+treasury:
+
+```ts
+const daoShip = new quais.Contract(salts.daoShip, DAOSHIP_ABI, signer);
+
+const proposalData = encodeMultiSend([{
+  operation: 0,                 // Call
+  to: recipientAddress,
+  value: quais.parseQuai("10"),
+  data: "0x",
+}]);
+
+await daoShip.submitProposal(proposalData, 0, "Fund community event", {
+  value: await daoShip.proposalOffering(),
+});
+```
+
+## 6. Post metadata via Poster
+
+`Poster` stores no state — it emits `NewPost` for indexers and frontends. Attach a DAO profile
+under the recognized tag so the indexer picks it up:
+
+```ts
+const poster = new quais.Contract(
+  "0x005C3957b8f612BBcdCFCbeDb8C53C3d3b3FEEdc", // Poster
+  [
+    "function post(string content, string tag) external",
+    "event NewPost(address indexed user, string content, string indexed tag)",
+  ],
+  signer,
+);
+
+await poster.post(
+  JSON.stringify({ name: "My DAO", description: "A test ship", logo: "ipfs://Qm..." }),
+  "daoships.launcher.daoProfile",
+);
+```
+
+The indexer stores these posts in `ds_records`, keyed by tag and trust level. See
+[Indexer](/docs/developers/indexer) for how to query them, and
+[Build a Navigator](/docs/developers/build-a-navigator) to add onboarding extensions.

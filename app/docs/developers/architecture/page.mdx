@@ -1,0 +1,110 @@
+export const metadata = {
+  title: "Architecture",
+  description:
+    "How the DAO Ships contracts fit together — the DAOShip governance module, Shares and Loot tokens, the launcher factory, Poster, and the Quai Vault treasury.",
+};
+
+# Architecture
+
+A DAO Ships "ship" is not a single contract. It is a small constellation of contracts that
+deploy together and play distinct roles: a governance module (`DAOShip`), two ERC-20 tokens
+(`SharesERC20` and `LootERC20`), a treasury (a Quai Vault acting as the *avatar*), and an
+on-chain metadata bus (`Poster`). A factory — `DAOShipAndVaultLauncher` — wires them up in a
+single transaction. This page explains how the pieces relate.
+
+All addresses and the canonical deployment live on **Quai Orchard Testnet (Cyprus-1), chain ID
+`15000`**. See [Contracts](/docs/developers/contracts) for the address table.
+
+## The components
+
+| Component | Role |
+|-----------|------|
+| `DAOShip` | The governance engine — proposals, voting, ragequit, navigator and guild-token management. Holds no funds. |
+| `SharesERC20` | Voting token. Timestamp-checkpointed voting power with auto-delegation. |
+| `LootERC20` | Non-voting economic token. Counts toward a member's ragequit claim. |
+| Quai Vault | The treasury (the *avatar*). Holds all assets. `DAOShip` is enabled as a module on it. |
+| `DAOShipAndVaultLauncher` | Atomic factory: one transaction deploys the vault, `DAOShip`, and both tokens. |
+| `Poster` | EIP-3722 content bus. Emits `NewPost(user, content, tag)` for off-chain metadata. |
+
+## The Zodiac IAvatar pattern
+
+`DAOShip` follows the [Zodiac](https://github.com/gnosis/zodiac) module pattern. The vault is a
+Zodiac-compatible *avatar*: a smart account that can execute transactions on behalf of enabled
+*modules*. `DAOShip` is enabled as a module on its vault, so when a proposal passes, `DAOShip`
+spends treasury funds by calling the avatar's `execTransactionFromModule`:
+
+```solidity
+// 3-param convenience form for plain Call operations
+IAvatar(avatar).execTransactionFromModule(to, value, data);
+
+// 4-param form for DelegateCall (e.g. MultiSend batching)
+IAvatar(avatar).execTransactionFromModule(to, value, data, Enum.Operation.DelegateCall);
+```
+
+This separation is the core safety property: the vault holds the money, `DAOShip` holds none.
+`DAOShip` has no `receive()` function — the treasury is always the vault. If governance ever
+misbehaves, vault owners retain the emergency power to disable the module.
+
+## EIP-1167 clones and atomic deployment
+
+The tokens and the `DAOShip` instance are **EIP-1167 minimal proxy clones** of pre-deployed
+singletons (logic contracts). Cloning costs roughly `300K` gas versus around `4M` for deploying
+a fresh singleton. The vault is an ERC-1967 proxy created by the Quai Vault factory.
+
+Deployment is atomic and avoids a separate `enableModule` step. The launcher uses a
+predict-then-create flow:
+
+1. Predict the `DAOShip` clone address deterministically (CREATE2).
+2. Create the vault with `initialModules = [predictedDAOShip]` and MultiSendCallOnly whitelisted
+   as a DelegateCall target.
+3. Launch `DAOShip` with the freshly created vault address injected as the `avatar`.
+4. Assert the predicted address equals the actual deployed address.
+
+Because CREATE2 addresses are deterministic, callers can mine salts off-chain so every clone
+lands on the Cyprus-1 `0x00` shard prefix. See
+[Launch from TypeScript](/docs/developers/launch-from-typescript) for the salt-mining workflow.
+
+## Execution flow
+
+```text
+                         ┌──────────────────────────────┐
+                         │  DAOShipAndVaultLauncher       │
+                         │  (CREATE2 clones + vault proxy)│
+                         └───────────────┬────────────────┘
+                                         │ one transaction
+                 ┌───────────────────────┼────────────────────────┐
+                 ▼                       ▼                        ▼
+          ┌────────────┐         ┌────────────────┐        ┌──────────────┐
+          │ SharesERC20│◄────────│    DAOShip      │───────►│  LootERC20    │
+          │ (voting)   │  mint/  │  (governance    │  mint/ │  (economic)   │
+          └────────────┘  burn   │   module)       │  burn  └──────────────┘
+                                 └───────┬─────────┘
+                  execTransactionFromModule │
+                                          ▼
+                                 ┌──────────────────┐
+                                 │   Quai Vault       │
+                                 │  (avatar/treasury) │
+                                 └──────────────────┘
+
+  Poster (EIP-3722)  ──NewPost(user, content, tag)──►  off-chain indexers / frontends
+```
+
+## Navigators
+
+`Navigators` are trusted, permissioned extension contracts (for example, onboarding flows that
+mint shares in exchange for QUAI). Governance grants each navigator an additive permission
+bitmask: `ADMIN = 1`, `MANAGER = 2`, `GOVERNOR = 4`. A `MANAGER` navigator can mint and burn
+tokens, so navigators must be immutable and bounded.
+
+<Callout type="warning" title="Trust model">
+`MANAGER` navigators can mint shares and loot. They run with real power, so they must be
+immutable, reentrancy-guarded, and bounded by mint caps and expiry. See
+[Build a Navigator](/docs/developers/build-a-navigator).
+</Callout>
+
+## Where to go next
+
+- [Contracts](/docs/developers/contracts) — real deployed addresses and key functions.
+- [Launch from TypeScript](/docs/developers/launch-from-typescript) — deploy a DAO with the quais SDK.
+- [Indexer](/docs/developers/indexer) — read DAO state from Supabase.
+- [Build a Navigator](/docs/developers/build-a-navigator) — write your own extension.

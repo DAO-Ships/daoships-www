@@ -1,0 +1,161 @@
+export const metadata = {
+  title: "Build a Navigator",
+  description:
+    "Write a DAO Ships navigator — implement INavigator, extend BaseNavigator, respect the permission bitmask, and let governance enable it via setNavigators.",
+};
+
+# Build a Navigator
+
+A **navigator** is a trusted, permissioned extension that a DAO grants specific powers — for
+example, an onboarding flow that mints shares in exchange for QUAI. Navigators are how a ship adds
+behavior without changing the immutable `DAOShip` core. This guide shows how to write one safely.
+
+Start from the shipped examples: `OnboarderNavigator` (QUAI to shares/loot) and
+`ERC20TributeNavigator` (ERC-20 to shares/loot), both built on `BaseNavigator`.
+
+## The INavigator interface
+
+Every navigator implements `INavigator`. It exposes its `deployer`, a compile-time
+`navigatorType`, and emits `NavigatorDeployed` **exactly once, in the constructor**:
+
+```solidity
+interface INavigator {
+    event NavigatorDeployed(
+        address indexed daoShip,
+        address indexed deployer,
+        string navigatorType,
+        string name,
+        string description
+    );
+
+    function deployer() external view returns (address);
+    function navigatorType() external view returns (string memory);
+}
+```
+
+<Callout type="warning" title="Immutable, never proxied">
+Navigators use `immutable` state and MUST NOT sit behind a proxy. Because `NavigatorDeployed` is
+emitted in the constructor, only the deployer can author the name and description — no spoofing or
+metadata poisoning is possible. The indexer reads this event for navigator discovery.
+</Callout>
+
+## Extend BaseNavigator
+
+`BaseNavigator` (abstract, inherits `ReentrancyGuard` and `INavigator`) gives you the shared
+machinery: allowlist verification, mint-cap accounting, pause/unpause, and a minting helper. Its
+constructor wires up the bounded-trust immutables:
+
+```solidity
+constructor(
+    address _daoShip,
+    uint256 _expiry,        // 0 = no expiry
+    uint256 _mintCap,       // 0 = unlimited total shares+loot
+    uint256 _perAddressCap, // 0 = unlimited per recipient
+    bytes32 _allowlistRoot  // bytes32(0) = open to anyone
+)
+```
+
+A concrete navigator must define a `string public constant navigatorType`, emit
+`NavigatorDeployed` in its own constructor, and implement its pricing or tribute logic. Here is
+the minimal shape:
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.22;
+
+import "./BaseNavigator.sol";
+
+contract MyNavigator is BaseNavigator {
+    string public constant navigatorType = "MyNavigator";
+
+    constructor(
+        address _daoShip,
+        uint256 _expiry,
+        uint256 _mintCap,
+        uint256 _perAddressCap,
+        bytes32 _allowlistRoot,
+        string memory _name,
+        string memory _description
+    ) BaseNavigator(_daoShip, _expiry, _mintCap, _perAddressCap, _allowlistRoot) {
+        emit NavigatorDeployed(_daoShip, msg.sender, navigatorType, _name, _description);
+    }
+
+    function onboard(bytes32[] calldata proof) external payable nonReentrant {
+        if (paused) revert IsPaused();
+        if (expiry != 0 && block.timestamp > expiry) revert Expired();
+        _checkAllowlist(proof);
+
+        uint256 sharesToMint = /* your pricing */;
+        uint256 lootToMint = /* your pricing */;
+        uint256 toMint = sharesToMint + lootToMint;
+        if (toMint == 0) revert InsufficientTribute();
+
+        _checkAndUpdateCaps(toMint);            // enforces mintCap + perAddressCap
+        _mintSharesAndLoot(msg.sender, sharesToMint, lootToMint);
+
+        (bool ok, ) = daoShip.avatar().call{value: msg.value}(""); // tribute to treasury
+        if (!ok) revert TransferFailed();
+
+        emit Onboard(address(daoShip), msg.sender, msg.value, sharesToMint, lootToMint);
+    }
+}
+```
+
+## The permission bitmask
+
+`DAOShip` grants navigators an additive permission bitmask. Check it with a bitwise AND against
+the address's current grant:
+
+| Bit | Permission | Powers |
+|-----|------------|--------|
+| `1` | `ADMIN` | Pause/unpause tokens (`setAdminConfig`) |
+| `2` | `MANAGER` | Mint and burn shares and loot |
+| `4` | `GOVERNOR` | Cancel proposals, set governance config |
+
+Combinations are sums: `3` is ADMIN+MANAGER, `6` is MANAGER+GOVERNOR, `7` is full access. To call
+`mintShares` / `mintLoot` your navigator needs `MANAGER`. In `BaseNavigator`, pause and unpause
+are gated on `GOVERNOR` or the avatar:
+
+```solidity
+function pause() external {
+    if ((daoShip.navigators(msg.sender) & _GOVERNOR) == 0 && msg.sender != daoShip.avatar())
+        revert NotAuthorized();
+    paused = true;
+    emit Paused(msg.sender);
+}
+```
+
+<Callout type="danger" title="MANAGER is dilution power">
+A `MANAGER` navigator can mint unbounded shares and loot — directly diluting every member. Always
+bound it with a `mintCap`, a `perAddressCap`, and an `expiry`, keep it immutable, and never grant
+more permission than the navigator needs.
+</Callout>
+
+## Governance enables the navigator
+
+A navigator has no power until governance grants it permission. That happens through a passed
+proposal calling `setNavigators`, which is `governanceOnly` — it requires
+`msg.sender == address(this)`, so it can only execute via the proposal queue:
+
+```solidity
+function setNavigators(address[] calldata navigators, uint256[] calldata permissions)
+    external governanceOnly;
+```
+
+`setNavigators` rejects permission bits above `MAX_PERMISSION` (7) and honors any active locks: if
+`lockManager()` has been called, the call reverts with `ManagerLocked` when it tries to grant
+`MANAGER` to a new navigator (the same applies to `lockAdmin` / `lockGovernor`). These locks are
+irreversible.
+
+## Deploy and enable workflow
+
+1. Deploy your navigator with `_daoShip` set to the target DAO and sensible caps/expiry.
+2. The constructor emits `NavigatorDeployed`; the indexer registers it in `ds_navigators`.
+3. Build `setNavigators([myNavigator], [2])` calldata (MANAGER), wrap it in MultiSend, and submit
+   it as a proposal.
+4. Once the proposal passes and processes, the navigator can mint.
+
+See `scripts/replace-navigator.ts` in the contracts repo for a complete deploy to proposal
+encoding pattern. For the surrounding system, read [Architecture](/docs/developers/architecture)
+and [Contracts](/docs/developers/contracts); to watch onboard events, see
+[Indexer](/docs/developers/indexer).

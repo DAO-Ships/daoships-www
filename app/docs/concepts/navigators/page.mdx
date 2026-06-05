@@ -1,0 +1,105 @@
+export const metadata = {
+  title: "Navigators — Permissioned Extensions",
+  description:
+    "How Navigators extend a DAO Ships ship with onboarding and automation, the ADMIN/MANAGER/GOVERNOR permission model, the shipped navigators, and the trust assumptions behind them.",
+};
+
+# Navigators — Permissioned Extensions
+
+A bare governance system can do exactly one thing: pass proposals. **Navigators** are the modules that
+give a ship extra crew roles — onboarding new members, accepting tribute, automating routine work —
+without bloating the core contract. If you've heard of Moloch-style "shamans," Navigators are the
+DAO Ships equivalent, renamed and hardened.
+
+<Callout type="info" title="The one-sentence version">
+A Navigator is a trusted, immutable contract granted a specific bundle of permissions, letting it
+perform a narrow job — like minting Shares to new members — without a vote for every action.
+</Callout>
+
+## The permission model — a three-bit bitmask
+
+Every Navigator is granted permissions as an additive **bitmask** of three roles. Each role unlocks a
+specific set of actions:
+
+| Bit | Role | Value | Can do |
+| --- | --- | --- | --- |
+| 0 | ADMIN | `1` | Pause / unpause Share and Loot transfers |
+| 1 | MANAGER | `2` | Mint and burn Shares and Loot |
+| 2 | GOVERNOR | `4` | Change governance config, cancel proposals |
+
+Because the values are powers of two, they **add up** to describe combined roles:
+
+- `3` = ADMIN + MANAGER
+- `6` = MANAGER + GOVERNOR
+- `7` = full access (all three)
+
+The maximum valid value is `7`; anything higher is rejected. Granting or changing a Navigator's
+permissions is a **governance-only** action — it always requires a passed proposal, never a single
+party's say-so.
+
+## The three shipped navigators
+
+Three Navigators ship ready to use. All three need only the MANAGER role (`2`) to do their job.
+
+### Onboarder Navigator
+
+Turns **native QUAI into Shares or Loot**. A prospective member sends QUAI and receives membership
+tokens in return. It supports two pricing modes — a *multiplier* (tokens per QUAI, in basis points) or
+a *fixed price* with change refunded — plus a Merkle allowlist, a mint cap, a per-address cap, and an
+expiry. This is the most common way a ship admits new crew.
+
+### ERC20 Tribute Navigator
+
+The same idea, but for **ERC-20 tokens** — for example, accepting a stablecoin as tribute in exchange
+for membership. It uses safe transfer handling, **rejects fee-on-transfer tokens**, supports
+per-token pricing, and even allows single-transaction onboarding via permit signatures.
+
+### NFT-gated Navigator
+
+Mints membership to **holders of a specific ERC-721 collection**. Useful for gating a DAO on an
+existing community NFT. A mint cap is *mandatory* here (the contract refuses a zero cap), and claims
+are tracked per token ID — one NFT, one claim, forever.
+
+## The trust model — read this carefully
+
+Navigators are powerful by design, and that power rests on a clear assumption.
+
+<Callout type="danger" title="A MANAGER navigator can mint without limit">
+The MANAGER role grants unrestricted ability to mint Shares to any address. A malicious MANAGER could
+mint itself enough Shares to pass a proposal granting itself full control. The architecture assumes
+MANAGER navigators are immutable, audited contracts whose minting is bounded by a cap, an allowlist,
+or an expiry — never an EOA or an upgradeable proxy.
+</Callout>
+
+When evaluating any Navigator before granting it MANAGER, confirm it has at least one hard bound:
+
+- A **mint cap** that limits total issuance,
+- An **allowlist** restricting who can trigger minting,
+- An **expiry** after which minting stops, or
+- **Bounded per-call minting** (a fixed amount per unit of tribute).
+
+The shipped Onboarder, ERC20 Tribute, and NFT-gated navigators all meet this bar when configured
+correctly. An EOA with MANAGER, or a proxy the deployer can rewrite, never does.
+
+## Locks — freezing the roster
+
+Governance can permanently **lock** a role with `lockAdmin`, `lockManager`, or `lockGovernor`. A lock
+means *no new* Navigators can be granted that role. Locks are **one-way — there is no unlock.** Two
+important nuances:
+
+- Locking does **not** revoke existing Navigators; governance can still strip a compromised one.
+- Governance proposals can still call the locked functions directly, so the DAO never loses the
+  ability to act through a vote.
+
+## Why "Navigators" and not "shamans"?
+
+DAO Ships is inspired by Moloch v3, which called these modules "shamans." DAO Ships rewrote them from
+scratch with a standard `INavigator` interface (each carries an on-chain identity, type, and metadata
+event), richer safety features, and the nautical naming that runs through the whole framework. A
+Navigator charts a specific course; the crew still decides whether to grant it the helm.
+
+## Related
+
+Navigators that mint affect who holds [Shares vs. Loot](/docs/concepts/shares-vs-loot). And every
+treasury action a proposal triggers ultimately runs through
+[The Quai Vault Treasury](/docs/concepts/quai-vault-treasury) — covered next.

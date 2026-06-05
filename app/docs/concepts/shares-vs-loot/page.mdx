@@ -1,0 +1,90 @@
+export const metadata = {
+  title: "Shares vs. Loot",
+  description:
+    "How DAO Ships separates voting power (Shares) from economic stake (Loot), why members hold both, and how delegation and minting work.",
+};
+
+# Shares vs. Loot
+
+Every DAO Ships ship issues **two tokens**, and the split between them is the heart of how
+membership works. One token decides *who governs*. The other decides *who gets paid*. Keeping
+them separate is what lets a crew reward a contributor without handing them the wheel.
+
+<Callout type="info" title="The one-sentence version">
+Shares are voting power. Loot is economic weight without a vote. Both count toward your slice
+of the treasury when you leave.
+</Callout>
+
+## Shares — the voting token
+
+**Shares** (`SharesERC20`) are the governance token. Holding Shares gives you:
+
+- **Voting power** on every proposal, weighted by how many Shares you hold.
+- The ability to **sponsor** and **submit** proposals (subject to the sponsor threshold).
+- A **proportional claim on the treasury** when you [ragequit](/docs/concepts/ragequit).
+
+Shares track voting power using timestamped *checkpoints*, so the system can always look up
+exactly how much weight an address had at the moment a vote opened. This is what makes votes
+tamper-resistant — you cannot acquire Shares mid-vote to change a result retroactively.
+
+## Loot — the economic token
+
+**Loot** (`LootERC20`) is the non-voting token. A Loot holder has **no say in governance** but
+still holds a real economic stake:
+
+- Loot **counts toward your treasury payout** during ragequit, exactly like Shares.
+- Loot carries **zero voting power** — it never affects a proposal outcome.
+
+Loot is how a DAO rewards people who should share in the upside without steering the ship:
+advisors, grant recipients, early contributors, or service providers. A founder who wants to
+step back from governance can even use `convertSharesToLoot` to turn their Shares into Loot —
+keeping their economic claim while giving up their vote.
+
+| | Shares | Loot |
+| --- | --- | --- |
+| Voting power | Yes (weighted) | No |
+| Counts toward ragequit payout | Yes | Yes |
+| Can sponsor/submit proposals | Yes | No |
+| Typical holder | Active member / crew | Advisor, contributor, investor |
+
+## Members hold both
+
+A "member" is simply any address holding Shares, Loot, or both. Most active crew hold Shares;
+many also hold Loot. The two balances are tracked independently, and your **total ragequit claim
+is based on the sum of both** relative to the entire Shares-plus-Loot supply.
+
+## Delegation — lending your vote
+
+You don't have to vote on everything yourself. Shares support **delegation**: you can assign
+your voting power to another member you trust to vote on your behalf. You keep your tokens and
+your economic claim — only the *vote* is delegated.
+
+When Shares are first minted to a fresh address, that address is **auto-delegated to itself**, so
+new members can vote immediately without an extra step. If you ever burn all your Shares, your
+delegation is cleared — so if you later rejoin, you start with a clean self-delegation rather than
+a stale pointer to an inactive address.
+
+<Callout type="tip" title="Delegation at scale">
+In larger DAOs, delegation is how a quorum gets reached reliably. Passive holders delegate to a
+handful of active members, who then carry the vote. See
+[Quorum, Grace & Retention](/docs/concepts/quorum-grace-retention) for why that matters.
+</Callout>
+
+## How minting works
+
+New Shares and Loot don't appear on their own. They are minted in one of two ways:
+
+1. **At launch.** The founding crew receives an initial allocation when the ship is created.
+2. **Through a Navigator or a governance proposal.** A permissioned
+   [Navigator](/docs/concepts/navigators) (for example, an onboarding contract that mints Shares
+   in exchange for QUAI) or a passed governance proposal can mint to new members.
+
+Minting is a powerful, trust-laden operation — anything that can mint can dilute everyone else.
+That is why minting is restricted to the MANAGER permission tier and why operators bound it with
+caps and allowlists. The [Navigators](/docs/concepts/navigators) page covers that trust model in
+detail.
+
+## Related
+
+Next, see how a decision actually moves from idea to execution in the
+[Proposal Lifecycle](/docs/concepts/proposal-lifecycle).

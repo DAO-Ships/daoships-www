@@ -1,0 +1,105 @@
+export const metadata = {
+  title: "The Quai Vault Treasury",
+  description:
+    "Why a DAO Ships treasury is a Quai Vault M-of-N multisig rather than a bare contract — how governance spends through it, and the emergency brake, timelocks, and DelegateCall whitelist that keep it safe.",
+};
+
+# The Quai Vault Treasury
+
+A DAO is only as trustworthy as the place it keeps its money. In DAO Ships, the treasury is **not** a
+balance sitting inside the governance contract. It is a separate, hardened **Quai Vault** — a full
+M-of-N multisig wallet — and governance is just one authorized way to move funds out of it.
+
+<Callout type="info" title="The one-sentence version">
+Your DAO's treasury is a Quai Vault multisig; the governance contract spends from it as an authorized
+module, while the vault's human owners keep an independent emergency brake.
+</Callout>
+
+## The vault holds everything; governance holds nothing
+
+The two contracts have strictly separate jobs:
+
+- **The Quai Vault** is the *avatar* — it holds all the assets: native QUAI, ERC-20s, NFTs.
+- **The DAOShip** governance contract holds **no funds at all**. It is registered as a **module** on
+  the vault.
+
+When a proposal passes, the governance contract calls `execTransactionFromModule` on the vault, and the
+vault performs the transfer. Governance is a tenant with a key to one specific door — not the owner of
+the building.
+
+```text
+DAOShip.processProposal()
+  → QuaiVault.execTransactionFromModule(...)   // governance spends as a module
+      → funds leave the vault to the recipient
+```
+
+This module relationship is established **atomically at launch**: the launcher predicts the governance
+contract's address and creates the vault with that address pre-registered as a module, so there is
+never a window where the vault exists without governance wired in — and never a window where an
+attacker could insert themselves first.
+
+## Why this beats a bare treasury contract
+
+Holding funds in the governance contract itself is simpler to write, but far weaker. The Quai Vault
+buys a ship several independent layers of protection:
+
+| Capability | Bare treasury contract | Quai Vault |
+| --- | --- | --- |
+| M-of-N owner approval | No | Yes |
+| Independent emergency brake | No | Yes |
+| Per-transaction timelock | No | Yes |
+| DelegateCall whitelist | No | Yes |
+| Survives a governance bug | No — bug drains everything | Yes — owners can sever the module |
+
+### The owner emergency brake
+
+The vault's owners — typically the founding crew, configured as an M-of-N multisig — retain the
+ultimate safety valve: they can **disable the governance module** entirely. If a Navigator is
+compromised or a malicious proposal somehow passes, the owners can sever governance's access to the
+treasury before it executes. This is the "nuclear option," and it is the reason a governance exploit
+cannot, by itself, drain the funds.
+
+<Callout type="warning" title="Set the owners and threshold carefully">
+For any DAO with a meaningful treasury, use an M-of-N threshold where M is at least 2, and make the
+owners founding members — never a lone deployer bot. The emergency brake is only as trustworthy as the
+people holding the keys.
+</Callout>
+
+### Timelocks
+
+The vault supports a configurable **execution delay** — a vault-level floor plus optional
+per-transaction overrides. A delay between approval and execution gives owners time to react to a
+suspicious transaction before it lands.
+
+### The DelegateCall whitelist
+
+This is the subtle but critical defense. A *DelegateCall* lets one contract run another's code in its
+own storage — powerful, and dangerous if abused, because it could rewrite the vault's own state. The
+Quai Vault blocks DelegateCall by default and permits it only to **explicitly whitelisted addresses**.
+
+DAO Ships whitelists exactly one: **MultiSendCallOnly**, the batching helper that lets a single
+proposal bundle several actions. MultiSendCallOnly itself refuses nested DelegateCall sub-transactions.
+The result is defense-in-depth: the vault only DelegateCalls one known-safe library, and that library
+will not pass the privilege along.
+
+<Callout type="danger" title="The whitelist must include MultiSendCallOnly">
+Governance proposals execute through MultiSendCallOnly via DelegateCall. If that address is not in the
+vault's whitelist, every proposal with calldata silently does nothing — treasury spends, navigator
+changes, and config updates all break. The launcher sets this up automatically; verify it before
+announcing a DAO as operational.
+</Callout>
+
+## Immutable by design
+
+A Quai Vault wallet is **not upgradeable** — each is a separate proxy instance pointing at a shared,
+audited implementation, with no upgrade path. That is a deliberate trade: nobody, including the team,
+can quietly swap out the logic guarding your funds. The implementation has completed four audit rounds
+and is covered by a standing **bug bounty program** worth up to $500,000 for critical findings,
+reflecting how seriously the custody layer is treated.
+
+## Related
+
+You've now seen the full picture — read back through [Shares vs. Loot](/docs/concepts/shares-vs-loot),
+the [Proposal Lifecycle](/docs/concepts/proposal-lifecycle), and
+[Ragequit](/docs/concepts/ragequit) to see how membership, decisions, and exits all flow through this
+treasury.

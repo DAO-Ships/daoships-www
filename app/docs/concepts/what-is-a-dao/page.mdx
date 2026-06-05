@@ -1,0 +1,76 @@
+export const metadata = {
+  title: "What is a DAO?",
+  description:
+    "A plain-English introduction to decentralized autonomous organizations — what they are, why they matter, and how DAO Ships makes them practical on Quai.",
+};
+
+# What is a DAO?
+
+A **DAO** — a *decentralized autonomous organization* — is a group of people who pool
+resources and make decisions together, with the rules enforced by code on a blockchain
+instead of by a company, a bank, or a contract sitting in a filing cabinet.
+
+Think of a shared bank account where the rules for spending the money are written down,
+public, and impossible to quietly break. Nobody can drain the account on a whim. Every
+decision is proposed, voted on, and recorded for anyone to inspect.
+
+<Callout type="info" title="The one-sentence version">
+A DAO is an organization whose treasury and decisions are governed by transparent
+on-chain rules that its members vote on — not by a single trusted authority.
+</Callout>
+
+## What a DAO actually does
+
+Most DAOs exist to do three things well:
+
+1. **Hold a shared treasury.** Members contribute funds; the group owns them collectively.
+2. **Decide what to do with it.** Anyone can propose an action; members vote.
+3. **Execute automatically.** When a proposal passes, the blockchain carries it out — no
+   intermediary required.
+
+That's it. Everything else — membership rules, voting power, spending limits — is
+configuration on top of those three primitives.
+
+## Why blockchains, and why "autonomous"?
+
+The "autonomous" part is the key. In a traditional organization you *trust* a treasurer
+to follow the rules. In a DAO, the rules are the code: when a proposal passes its vote and
+clears a waiting period, the treasury moves the funds itself. No one has to be trusted to
+"do the right thing" — and no one can do the wrong thing, either.
+
+- **Transparent** — every member, balance, proposal, and vote is on-chain and verifiable.
+- **Permissionless** — you don't need anyone's approval to propose or vote (within the rules).
+- **Tamper-resistant** — the rules can only change the way the rules allow them to change.
+
+## Where DAO Ships fits
+
+Running a DAO well means getting a dozen fiddly things right: how voting power works, how
+proposals are sponsored and time-boxed, how the treasury is secured, and how someone leaves
+if they disagree. **DAO Ships** packages all of that into a framework you can launch on
+[Quai Network](https://qu.ai) in a single transaction.
+
+A DAO Ships DAO — a "ship" — comes with:
+
+- **Two tokens**: [Shares](/docs/concepts/shares-vs-loot) for voting power and Loot for
+  economic weight.
+- **A proposal system**: a clear [lifecycle](/docs/concepts/proposal-lifecycle) from
+  submission to execution, with quorum and timing rules you choose.
+- **A multisig treasury**: funds live in a [Quai Vault](/docs/concepts/quai-vault-treasury),
+  a hardened M-of-N wallet — not a bare contract.
+- **An exit hatch**: [ragequit](/docs/concepts/ragequit) lets any member leave with their
+  fair share if they don't like a decision.
+
+<Callout type="tip" title="Keep going">
+Next we'll look at the two tokens that make membership work — and why DAO Ships separates
+*voting power* from *economic stake*.
+</Callout>
+
+## Key terms
+
+| Term | Meaning |
+| --- | --- |
+| **Member / crew** | An address that holds Shares and/or Loot in the DAO |
+| **Proposal** | A requested action (spend funds, add a member, change a rule) put to a vote |
+| **Treasury** | The shared funds, held in the DAO's Quai Vault |
+| **Quorum** | The minimum participation needed for a vote to count |
+| **Ragequit** | Burning your tokens to exit with a proportional slice of the treasury |

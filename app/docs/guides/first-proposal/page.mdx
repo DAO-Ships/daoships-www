@@ -1,0 +1,92 @@
+export const metadata = {
+  title: "Create Your First Proposal",
+  description:
+    "Create a funding proposal in DAO Ships — pick a type, fill in the details, set the offering, submit, then get it sponsored and processed.",
+};
+
+# Create Your First Proposal
+
+A proposal is how anything happens in a DAO Ships ship: paying a contributor, adding a member, changing a rule. This guide walks you through creating a **funding proposal** — sending QUAI from the treasury to someone — and then taking it all the way through sponsorship, voting, and execution. Once you've done one, you've done them all.
+
+<Callout type="info" title="Before you start">
+Make sure you're [connected](/docs/guides/wallet-setup) to the app and viewing a DAO you're a member of. You'll need a little QUAI for gas, plus the proposal offering if your DAO requires one.
+</Callout>
+
+## The eight proposal types
+
+Every proposal is one of eight types, each encoded as an on-chain action:
+
+- **Funding** — transfer QUAI or tokens from the treasury.
+- **Membership** — mint Shares or Loot to new or existing members.
+- **Guild Tokens** — add or remove ragequit-eligible tokens.
+- **Governance Config** — change voting rules like quorum or voting period.
+- **Navigators** — grant, revoke, or pause a Navigator.
+- **Profile Update** — change the DAO's name, description, or avatar.
+- **Announcement** — post an official message to members.
+- **Custom Action** — an arbitrary contract call for advanced needs.
+
+We'll use **Funding** as the example, but the flow is the same for all of them.
+
+## Step 1: Open the proposal form
+
+1. Navigate to your DAO and open the **Proposals** tab.
+2. Click **New Proposal**.
+3. Select the **Funding** type.
+
+## Step 2: Fill in the details
+
+Every proposal carries human-readable context so voters know what they're approving.
+
+1. **Title** — a short, clear summary, like `Pay June contributor invoice`.
+2. **Description** — the full reasoning. Be specific about amounts and recipients.
+3. **Discussion link** — an optional URL to a forum thread or doc where the proposal was debated.
+
+<Callout type="tip" title="Write for the voter">
+Voters skim. A precise title and a description that states exactly what moves where earns yes votes faster than vague enthusiasm.
+</Callout>
+
+## Step 3: Set the funding action
+
+For a funding proposal, define what the treasury sends.
+
+1. Enter the **recipient** address (Cyprus-1, starts with `0x00`).
+2. Choose the **asset** — native QUAI or a treasury-held token.
+3. Enter the **amount**.
+
+The app encodes this into the on-chain action that executes if the proposal passes.
+
+## Step 4: Pay the offering and submit
+
+Some DAOs require a small **proposal offering** — a deposit that discourages spam.
+
+1. Review the offering amount shown in the form (it may be `0`).
+2. Click **Submit Proposal**.
+3. Approve the transaction in your wallet.
+
+Your proposal is now **submitted** but not yet on the ballot. It needs a sponsor.
+
+## Step 5: Get it sponsored
+
+A proposal must be **sponsored** by a member who holds at least the `sponsorThreshold` in Shares before voting can begin.
+
+1. If you hold enough Shares, you can **self-sponsor** in one step.
+2. Otherwise, share your proposal with a member who can sponsor it.
+
+Sponsorship snapshots voting power and opens the voting window. From here, the proposal moves through its [lifecycle](/docs/concepts/proposal-lifecycle): voting, then a grace period, then ready to process.
+
+## Step 6: Vote and process
+
+1. Members [cast votes](/docs/guides/vote-and-delegate) during the voting period.
+2. After voting closes, a **grace period** lets dissenters [ragequit](/docs/concepts/ragequit) before execution.
+3. Once grace ends and the proposal has passed quorum, anyone can click **Process** to execute it.
+
+<Callout type="warning" title="Processing is final">
+Processing executes the action and consumes the proposal — even if the action itself fails. Make sure a member processes important proposals with enough gas. Anyone can process; it's permissionless.
+</Callout>
+
+When you process a passing funding proposal, the treasury sends the funds. That's your first proposal, start to finish.
+
+## Related
+
+- [Vote and Delegate](/docs/guides/vote-and-delegate) — cast votes and lend voting power.
+- [Proposal Lifecycle](/docs/concepts/proposal-lifecycle) — the full state machine.

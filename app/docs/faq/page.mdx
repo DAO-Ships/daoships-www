@@ -1,0 +1,69 @@
+export const metadata = {
+  title: "Frequently Asked Questions",
+  description:
+    "Common questions about DAO Ships — what it is, how it compares to MolochDAO and Baal, costs, security, the Quai Vault treasury, Shares vs. Loot, Navigators, and more.",
+};
+
+# Frequently Asked Questions
+
+Quick answers to the questions we hear most. If you're brand new, the [What is a DAO?](/docs/concepts/what-is-a-dao) concept page is a gentler place to start.
+
+## What is DAO Ships?
+
+DAO Ships is a framework for launching, governing, and managing DAOs on [Quai Network](https://qu.ai). It packages governance, two membership tokens, and a secured multisig treasury into a single deploy. You create a DAO — a "ship" — through a 7-step wizard at [app.daoships.xyz](https://app.daoships.xyz), with no Solidity required.
+
+## Is it audited?
+
+DAO Ships is currently deployed on the Quai **Cyprus-1 testnet** and is under active development. Treat it as experimental software: use testnet QUAI, which has no real-world value, and don't commit funds you can't afford to lose. Audit status will be communicated before any mainnet launch.
+
+## How is it different from MolochDAO or Baal?
+
+DAO Ships descends from the Moloch and Baal lineage and keeps their best ideas — a shared treasury, proposal-based governance, and the ragequit exit hatch. It adapts that model to Quai Network's sharded architecture and adds a hardened **Quai Vault** treasury, a **Navigator** plug-in system, and a separation of voting power (Shares) from economic stake (Loot). If you've used Baal, the concepts will feel familiar; the names changed (Baal became DAOShip, Shaman became Navigator).
+
+## What is a Quai Vault treasury?
+
+Instead of holding funds in a bare contract, every DAO Ships ship stores its treasury in a **Quai Vault** — a hardened M-of-N multisig wallet. The DAO governs the vault, and the vault holds the assets. This means no single key controls the money, and the launcher wires the vault and DAO together automatically. See [Quai Vault Treasury](/docs/concepts/quai-vault-treasury).
+
+## Can I change governance after launch?
+
+Yes. Parameters like `votingPeriod`, `quorumPercent`, and `sponsorThreshold` are set at launch but can be changed later through a **Governance Config** proposal — the DAO votes to change its own rules. Choose sensible defaults up front using the [governance parameters guide](/docs/guides/governance-parameters), knowing you can adjust later.
+
+## What happens when someone ragequits?
+
+Ragequit is the exit hatch. A member burns their Shares and Loot and receives a proportional slice of the treasury's guild-token assets. It's how anyone who disagrees with a passing proposal can leave with their fair share before the action executes — usually during the grace period. A `minRetentionPercent` setting prevents a mass exit from draining the DAO entirely. See [Ragequit](/docs/concepts/ragequit).
+
+## What are Shares versus Loot?
+
+Both are membership tokens, but they do different jobs. **Shares** carry voting power and can sponsor and submit proposals. **Loot** has no vote — it's pure economic stake. Both count equally toward your ragequit payout. This split lets a DAO reward an advisor or contributor financially without handing them governance power. See [Shares vs. Loot](/docs/concepts/shares-vs-loot).
+
+## What are Navigators?
+
+Navigators are permissioned plug-in contracts that extend what a DAO can do without a full proposal every time. For example, an **OnboarderNavigator** lets new members join by paying QUAI tribute and automatically mints them Shares or Loot. Navigators hold scoped permissions — admin, manager, or governor — and can be added, paused, or revoked through governance. See [Navigators](/docs/concepts/navigators).
+
+## What does it cost to launch?
+
+On the Cyprus-1 testnet, launching costs only gas, paid in testnet QUAI you get free from a [faucet](/docs/guides/wallet-setup). There is no platform fee to create a DAO. Launching uses more gas than a typical transaction because it deploys several contracts at once, so keep a comfortable balance on hand.
+
+## Is it on mainnet?
+
+Not yet. DAO Ships runs on the Quai Cyprus-1 testnet today. Anything you create now is for testing and experimentation. Mainnet availability will be announced separately.
+
+## Which wallets are supported?
+
+**Pelagus** is the recommended wallet and the smoothest path. **WalletConnect** is also supported, so you can connect compatible mobile or hardware wallets. Whatever you use, your wallet must be on the Quai **Cyprus-1** zone (chain id `15000`). The [wallet setup guide](/docs/guides/wallet-setup) walks you through it.
+
+## How many proposal types are there?
+
+Eight: Funding, Membership, Guild Tokens, Governance Config, Navigators, Profile Update, Announcement, and Custom Action. Each is encoded as an on-chain action that executes when the proposal passes and is processed. Walk through one in [Create Your First Proposal](/docs/guides/first-proposal).
+
+## Can I build on it?
+
+Yes. DAO Ships is built around the Navigator plug-in system, which is designed for extension — onboarding, budgets, vesting, timelocks, and more can be implemented as Navigators. The protocol spans the contracts, an event indexer, and the app. If you want to build a Navigator or integrate the data, the on-chain contracts and indexed data are the place to start.
+
+## What is the grace period for?
+
+After a proposal's voting closes, a **grace period** opens before the action can execute. Its purpose is to give any member who disagrees with the outcome time to [ragequit](/docs/concepts/ragequit) and exit with their fair share before the decision takes effect. Longer grace periods give stronger exit protection; shorter ones keep operations fast.
+
+<Callout type="tip" title="Still stuck?">
+If your question isn't here, the [concepts](/docs/concepts/what-is-a-dao) and [guides](/docs/guides/launch-a-dao) sections cover the mechanics in depth.
+</Callout>

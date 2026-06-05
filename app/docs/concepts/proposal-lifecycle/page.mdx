@@ -1,0 +1,116 @@
+export const metadata = {
+  title: "The Proposal Lifecycle",
+  description:
+    "How a DAO Ships proposal travels from submission through voting, grace, and execution — the full state machine, the eight proposal types, and parallel processing.",
+};
+
+# The Proposal Lifecycle
+
+Every decision a ship makes — sending funds, adding a member, changing a rule — travels the same
+path: it is **submitted**, **sponsored**, **voted on**, given a **grace period**, and finally
+**processed**. Understanding that path is the key to understanding how the crew actually steers.
+
+<Callout type="info" title="The one-sentence version">
+A proposal moves through a fixed set of states; it can only execute after it has passed a vote and
+survived a grace window in which unhappy members are free to leave.
+</Callout>
+
+## The state machine
+
+Here is the full journey of a healthy proposal, and the off-ramps where it can end early:
+
+```text
+Submitted → (sponsor) → Voting → Grace → Ready → Processed
+                                       ↘ Defeated  (failed quorum or majority)
+                                       ↘ Expired   (processing window passed)
+                ↘ Cancelled            (submitter or GOVERNOR)
+```
+
+DAO Ships tracks nine possible states for a proposal:
+
+| Value | State | Meaning |
+| --- | --- | --- |
+| `0` | Unborn | Does not exist yet |
+| `1` | Submitted | Created, waiting for a sponsor |
+| `2` | Voting | The voting window is open |
+| `3` | Cancelled | Withdrawn by the submitter or a GOVERNOR navigator |
+| `4` | Grace | Voting ended; the ragequit window is open |
+| `5` | Ready | Passed and out of grace; awaiting `processProposal` |
+| `6` | Processed | Executed (or cleared) |
+| `7` | Defeated | Failed quorum or majority |
+| `8` | Expired | The processing window elapsed before anyone executed it |
+
+## The four actions
+
+Four distinct actions move a proposal along. Different people can perform them.
+
+### 1. Submit
+
+Anyone can **submit** a proposal. It carries the action to perform (encoded as a batch of one or
+more steps), a proposal type, and a short text description. A submitter may need to pay a small
+`proposalOffering` in QUAI as an anti-spam measure — though a member who can self-sponsor skips
+the offering entirely.
+
+### 2. Sponsor
+
+A proposal in **Submitted** state does nothing until it is **sponsored**. Sponsoring requires the
+sponsor to hold at least the `sponsorThreshold` in Shares. To resist flash-loan attacks, the check
+reads the sponsor's voting power as of *one second in the past* — you cannot borrow Shares and
+sponsor in the same instant. Sponsoring opens the **Voting** window.
+
+### 3. Vote
+
+While the proposal is in **Voting**, Share holders cast **yes** or **no** votes weighted by the
+Shares they held when voting opened. The system tracks both a head count and the share-weighted
+balance behind each side.
+
+### 4. Process
+
+After voting ends and the **Grace** period elapses, anyone — it is permissionless — calls
+`processProposal`. If the proposal passed, its action executes. If it failed, processing simply
+marks it Defeated and clears it from the queue.
+
+<Callout type="warning" title="Processing is final">
+Once `processProposal` runs, the proposal is consumed — even if its action reverts for lack of gas.
+There is no retry. Make sure a trusted member or keeper processes important proposals with
+sufficient gas. The DAO must submit a fresh proposal to try again.
+</Callout>
+
+## The eight proposal types
+
+A proposal carries a `proposalType` tag (`0` through `7`) that describes its intent. The tag is
+primarily for indexers and front-ends — it lets a UI label and filter proposals — while the actual
+on-chain effect is determined by the encoded action. Typical categories a ship uses are:
+
+1. Spend treasury funds
+2. Mint Shares or Loot to members
+3. Burn Shares or Loot
+4. Add, change, or remove a [Navigator](/docs/concepts/navigators)
+5. Update the guild-token set for [ragequit](/docs/concepts/ragequit)
+6. Change [governance parameters](/docs/concepts/quorum-grace-retention)
+7. Run an arbitrary governance action via `executeAsGovernance`
+8. Signal or metadata-only proposals
+
+## Parallel processing — no waiting in line
+
+Many DAO frameworks force proposals through a **sequential queue**: proposal #5 cannot execute until
+#4 has been processed. DAO Ships removes that bottleneck. **Any Ready proposal can be processed in
+any order**, independently of the others.
+
+This matters in two ways:
+
+- **Throughput.** A busy ship can have dozens of proposals in flight at once.
+- **Resilience.** If one proposal's action reverts, it is recorded as failed and simply set aside —
+  it cannot block the rest of the queue. Even a Defeated proposal can be processed (with empty data)
+  to clear it.
+
+<Callout type="tip" title="Why proposals expire">
+A proposal that passes but is never processed would otherwise sit executable forever. The
+`defaultExpiryWindow` auto-expires such "zombie" proposals into the terminal **Expired** state. See
+[Quorum, Grace & Retention](/docs/concepts/quorum-grace-retention) for how that window is set.
+</Callout>
+
+## Related
+
+The states above depend on a handful of tunable parameters — quorum, grace, retention, and more.
+Those are covered next in [Quorum, Grace & Retention](/docs/concepts/quorum-grace-retention).

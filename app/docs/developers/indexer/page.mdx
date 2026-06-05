@@ -1,0 +1,147 @@
+export const metadata = {
+  title: "The Indexer",
+  description:
+    "How the DAO Ships event-driven Supabase indexer stores on-chain state in ds_* tables, and how to query it with supabase-js, PostgREST, and Realtime.",
+};
+
+# The Indexer
+
+Reading DAO state directly from the chain is slow and awkward — voting power lives in
+timestamped checkpoints, proposals span multiple events, and member balances derive from
+transfers. The **DAO Ships indexer** solves this by consuming on-chain events and writing
+structured rows into a Supabase (PostgreSQL) database your frontend can query directly.
+
+The indexer is **event-driven**: every row derives from on-chain events, with zero RPC calls in
+its handlers. Counter operations are idempotent (safe to retry), and it indexes 24 distinct event
+types across the launcher, governance, tokens, navigators, and `Poster`.
+
+## Schema per network
+
+Each network gets an isolated PostgreSQL schema (`testnet`, `mainnet`, `dev`), and every table is
+prefixed `ds_`. Schemas are created and exposed to the PostgREST API like this:
+
+```sql
+SELECT create_ds_schema('testnet');
+SELECT create_ds_schema('mainnet');
+
+-- Expose schemas to PostgREST so supabase-js can reach them
+ALTER ROLE authenticator SET pgrst.db_schemas TO 'public, graphql_public, testnet, mainnet, dev';
+```
+
+## The ds_* tables
+
+| Table | Purpose |
+|-------|---------|
+| `ds_daos` | DAO records — governance params, token totals, profile |
+| `ds_members` | Member share/loot balances, delegation, vote counts |
+| `ds_proposals` | Proposal lifecycle (submit, sponsor, vote, process, cancel) |
+| `ds_votes` | Individual vote records |
+| `ds_navigators` | Registered navigators with permissions and type |
+| `ds_navigator_events` | Onboard events emitted by navigators |
+| `ds_ragequits` | Member exit records with per-token amounts |
+| `ds_records` | `Poster` metadata (profiles, rationale, announcements) |
+| `ds_guild_tokens` | Registered ragequit tokens |
+| `ds_delegations` | Delegation change history |
+| `ds_event_transactions` / `ds_processed_logs` | Dedup tracking for retry idempotency |
+| `ds_indexer_state` | Last processed block and sync state |
+
+## NUMERIC(78,0) maps to strings
+
+Token amounts and voting power are `uint256` on-chain. In Postgres they are stored as
+`NUMERIC(78, 0)` — large enough to hold any `uint256`. Over PostgREST these come back as
+**strings**, not JavaScript numbers, to avoid precision loss. Always parse them into `BigInt`:
+
+```ts
+const totalShares = BigInt(dao.total_shares); // dao.total_shares is a string
+```
+
+Smaller integer columns (`voting_period`, `proposal_count`, `yes_votes`, `block_number`) are
+`BIGINT` and are safe as numbers within typical ranges.
+
+## Querying with supabase-js
+
+Point the client at the right schema for the network you want:
+
+```ts
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  db: { schema: "testnet" }, // or "mainnet"
+});
+
+// List DAOs, newest first
+const { data: daos } = await supabase
+  .from("ds_daos")
+  .select("id, name, total_shares, total_loot, proposal_count, voting_period")
+  .order("updated_at", { ascending: false })
+  .limit(20);
+
+// Active proposals for one DAO
+const { data: proposals } = await supabase
+  .from("ds_proposals")
+  .select("proposal_id, details, sponsored, processed, yes_balance, no_balance, voting_ends")
+  .eq("dao_id", daoAddress)
+  .order("proposal_id", { ascending: false });
+
+// A member's standing
+const { data: member } = await supabase
+  .from("ds_members")
+  .select("shares, loot, voting_power, votes, delegating_to")
+  .eq("dao_id", daoAddress)
+  .eq("member_address", wallet)
+  .single();
+```
+
+`ds_records` holds `Poster` metadata. Filter by tag to fetch DAO profiles:
+
+```ts
+const { data: profile } = await supabase
+  .from("ds_records")
+  .select("content_json, trust_level, created_at")
+  .eq("dao_id", daoAddress)
+  .eq("tag", "daoships.launcher.daoProfile")
+  .order("created_at", { ascending: false })
+  .limit(1);
+```
+
+<Callout type="warning" title="Treat Poster content as untrusted">
+`ds_records.content` is raw on-chain data and is UNTRUSTED — escape it before rendering. Prefer
+the sanitized `content_json` column, and respect the `trust_level` field (`VERIFIED`,
+`VERIFIED_INITIAL`, `SEMI_TRUSTED`, `MEMBER`).
+</Callout>
+
+## Realtime subscriptions
+
+`ds_daos`, `ds_proposals`, `ds_members`, `ds_votes`, `ds_records`, `ds_navigators`,
+`ds_navigator_events`, and `ds_indexer_state` are published to Supabase Realtime. Subscribe to
+live-update a vote tally:
+
+```ts
+const channel = supabase
+  .channel("votes")
+  .on(
+    "postgres_changes",
+    { event: "INSERT", schema: "testnet", table: "ds_votes", filter: `dao_id=eq.${daoAddress}` },
+    (payload) => {
+      console.log("new vote", payload.new);
+    },
+  )
+  .subscribe();
+```
+
+## Querying over PostgREST directly
+
+supabase-js is a thin wrapper over PostgREST. You can hit the REST endpoint directly — set the
+`Accept-Profile` header to choose the schema:
+
+```bash
+curl "$SUPABASE_URL/rest/v1/ds_daos?select=id,name,total_shares&order=updated_at.desc&limit=10" \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+  -H "Accept-Profile: testnet"
+```
+
+For the contracts the indexer watches and the full event list, see
+[Contracts](/docs/developers/contracts) and [Architecture](/docs/developers/architecture).
+Navigator addresses are discovered dynamically from `NavigatorSet` events — no static config is
+needed.

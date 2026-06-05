@@ -1,0 +1,66 @@
+export const metadata = {
+  title: "Choosing Governance Parameters",
+  description:
+    "How to choose votingPeriod, gracePeriod, quorumPercent, sponsorThreshold, minRetentionPercent, and proposalOffering — with five ready-made templates.",
+};
+
+# Choosing Governance Parameters
+
+The governance step of the [launch wizard](/docs/guides/launch-a-dao) asks for six numbers. Get them right and your DAO runs smoothly; get them wrong and you'll find proposals can't pass, or anyone can drain the treasury. This guide explains each parameter, shows five battle-tested templates, and walks you past the one mistake almost everyone makes the first time.
+
+<Callout type="warning" title="The basis-point trap">
+Percentages here are in basis points, where `10000` equals 100%. So 20% is `2000`, not `20`. Passing `20` sets your quorum to 0.2% — effectively no quorum at all. Always multiply your intended percent by 100.
+</Callout>
+
+## What each parameter does
+
+- **`votingPeriod`** — how long voting stays open, in seconds. Short for fast teams (a day), long for high-stakes funds (a week).
+- **`gracePeriod`** — seconds after a vote where members can [ragequit](/docs/concepts/ragequit) before the action executes. This is the exit window for anyone who disagrees with a passing decision.
+- **`quorumPercent`** — minimum share of voting power that must participate, in basis points. Too high and nothing passes; too low and a tiny faction controls the DAO.
+- **`sponsorThreshold`** — minimum Shares a member needs to push a proposal onto the ballot. Higher thresholds reduce ballot spam but concentrate agenda-setting power.
+- **`minRetentionPercent`** — minority protection, in basis points. It blocks a proposal if too much of the supply has exited, preventing a treasury drain via mass ragequit.
+- **`proposalOffering`** — an anti-spam deposit in QUAI required to submit a proposal. Zero is fine for small trusted groups; raise it as your DAO opens up.
+
+For the conceptual background on quorum, grace, and retention, see [Quorum, Grace & Retention](/docs/concepts/quorum-grace-retention).
+
+## Five templates
+
+Pick the row that best matches your DAO and start from there. Values come from the DAO Ships configuration playbook.
+
+| Parameter | Startup (3-10) | Community (20-50) | Protocol (50-200) | Investment (10-100) | Agent (2-50) |
+| --- | --- | --- | --- | --- | --- |
+| `votingPeriod` | `86400` (1 day) | `259200` (3 days) | `432000` (5 days) | `604800` (7 days) | `300` (5 min) |
+| `gracePeriod` | `86400` (1 day) | `172800` (2 days) | `432000` (5 days) | `604800` (7 days) | `60` (1 min) |
+| `quorumPercent` | `5000` (50%) | `2000` (20%) | `1000` (10%) | `3000` (30%) | `5000` (50%) |
+| `sponsorThreshold` | `1` share | `10` shares | `100` shares | `1000` shares | `1` share |
+| `minRetentionPercent` | `6600` (66%) | `6600` (66%) | `5000` (50%) | `7500` (75%) | `0` |
+| `proposalOffering` | `0` | `0.01` QUAI | `0.1` QUAI | `1` QUAI | `0` |
+| `defaultExpiryWindow` | `259200` (3 days) | `604800` (7 days) | `604800` (7 days) | `1209600` (14 days) | `600` (10 min) |
+
+A few notes on the extremes:
+
+- **Startup** uses a high `5000` quorum because a small trusted group should reach majority easily.
+- **Protocol** drops quorum to `1000` because hitting 10% participation across hundreds of holders is already ambitious — delegation becomes essential.
+- **Investment** sets the strongest minority protection (`7500`) because economic exit rights are the whole point of the DAO.
+- **Agent** compresses everything to minutes for programmatic voting and sets `minRetentionPercent` to `0` because agents don't ragequit.
+
+<Callout type="tip" title="Quorum of zero is valid">
+Setting `quorumPercent` to `0` means any proposal with at least one yes vote and a simple majority passes. That's fine for a high-trust micro-DAO or an agent collective where speed beats consensus — but risky for a real treasury. If you hold serious funds, use at least `1000` to `2000`.
+</Callout>
+
+## Choosing your values
+
+1. **Start from the closest template** above by member count and treasury size.
+2. **Adjust `votingPeriod` and `gracePeriod`** to your team's pace. Faster isn't always better — a longer grace gives dissenters a real chance to exit.
+3. **Set `quorumPercent` to what you can realistically reach.** If only 30% of your members ever vote, a 50% quorum guarantees gridlock.
+4. **Tune `sponsorThreshold`** so legitimate members can propose but drive-by spam can't.
+5. **Keep `minRetentionPercent` high** for treasury-heavy DAOs and low for fast-moving ones.
+6. **Convert every percentage to basis points** before you type it in. Multiply by 100.
+
+<Callout type="danger" title="Mind the expiry window">
+If `defaultExpiryWindow` is `0`, passing proposals auto-expire after `2 * (votingPeriod + gracePeriod)`. With very short periods this can be just a couple of minutes — set an explicit window so important proposals don't expire before anyone processes them.
+</Callout>
+
+## Can I change these later?
+
+Yes. Governance parameters are set at launch but can be changed afterward through a **Governance Config** proposal — meaning the DAO has to vote to change its own rules. Choose carefully up front, but know you're not locked in. See [Create Your First Proposal](/docs/guides/first-proposal).
