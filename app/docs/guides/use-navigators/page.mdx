@@ -1,27 +1,47 @@
 export const metadata = {
   title: "Use Navigators",
   description:
-    "Add and configure navigators in DAO Ships — Onboarder, ERC-20 Tribute, and NFT-gated — to let new members join instantly without a proposal for each one.",
+    "Add, sanction, and enable navigators in DAO Ships — onboarding, polls, timelocks, vesting, budgets, and dues — across the three trust classes, so members and automation can act without a proposal for every step.",
 };
 
 # Use Navigators
 
-By default, adding a member means passing a **Membership** proposal. That's fine for a founding crew, but it doesn't scale to open onboarding. **Navigators** are permissioned plug-in contracts that let people join on their own terms — paying a tribute or proving they hold an NFT — and get minted Shares or Loot automatically. For the concept and trust model, see [Navigators](/docs/concepts/navigators).
+By default, every action a DAO takes is a proposal. That's fine for a founding crew, but it doesn't
+scale to open onboarding, recurring payroll, or quick temperature checks. **Navigators** are immutable
+extension contracts that let people and automation act within bounds the DAO sets once. This guide
+covers how to *put one to work*; for the full catalog and the per-navigator details, see the
+[Navigators overview](/docs/navigators/overview).
 
-## The shipped navigators
+## First, know the trust class
 
-- **Onboarder** — new members send native **QUAI** tribute and receive Shares and/or Loot.
-- **ERC-20 Tribute** — same idea, but members pay in a chosen ERC-20 (a stablecoin or project token), with permit support for one-transaction joins.
-- **NFT-gated** — holders of a specific ERC-721 collection claim membership, one claim per token.
+How you add a navigator depends on which of three classes it belongs to — because each is endorsed
+where its power actually lives.
 
-## Add a navigator
+| Class | Navigators | You endorse it by… |
+| --- | --- | --- |
+| **Permissioned** | [Onboarder](/docs/navigators/onboarder), [ERC-20 Tribute](/docs/navigators/erc20-tribute), [NFT-Gate](/docs/navigators/nft-gate), [Timelock](/docs/navigators/timelock), [Vesting](/docs/navigators/vesting), [Subscription](/docs/navigators/subscription) | Passing a **Navigators proposal** that grants it a permission |
+| **Read-only** | [Signal](/docs/navigators/signal) | Posting a **vault sanction list** that names it |
+| **Module** | [Budget](/docs/navigators/budget) | Passing a proposal that **enables it on the vault** |
 
-You can attach navigators two ways:
+<Callout type="warning" title="Navigators are trusted code">
+A navigator with `MANAGER` can mint tokens; one enabled on the vault can move treasury funds. Only
+endorse navigators that are immutable, audited, and bounded by a cap, allowlist, or expiry. Governance
+can always pause or revoke one, but treat endorsing a navigator as a high-trust action.
+</Callout>
 
-1. **At launch** — the launch wizard's **Navigators** step lets you enable and configure an Onboarder or ERC-20 Tribute navigator as part of the deploy.
-2. **After launch** — pass a **Navigators** proposal. Because granting navigator permissions is `governanceOnly`, the DAO must vote to add, reconfigure, pause, or revoke one. This keeps a powerful capability under member control.
+## Endorse a permissioned navigator
 
-## Configure an Onboarder
+Permissioned navigators are granted a [permission bit](/docs/navigators/overview#the-permission-model-a-three-bit-bitmask)
+through governance. There are two moments you can do it:
+
+1. **At launch** — the launch wizard's **Navigators** step lets you enable and configure an
+   **Onboarder** or **ERC-20 Tribute** navigator as part of the deploy. These two are the only
+   navigators offered in the wizard.
+2. **After launch** — pass a **Navigators** proposal. Because granting permissions is `governanceOnly`,
+   the DAO must vote to add, reconfigure, pause, or revoke one. The moment the proposal processes, the
+   navigator can act. This is how you add NFT-Gate, Timelock, Vesting, and Subscription.
+
+### Configure an Onboarder
 
 When you add an Onboarder, you set how tribute converts to tokens and the limits that keep it safe:
 
@@ -29,23 +49,72 @@ When you add an Onboarder, you set how tribute converts to tokens and the limits
 | --- | --- |
 | Mode | `multiplier` (shares = tribute × multiplier) or `fixed-price` (a set price per share) |
 | Price / multiplier | The conversion rate from QUAI to Shares and/or Loot |
-| `minTribute` | The minimum contribution accepted |
-| `mintCap` | Total Shares/Loot the navigator may ever mint |
+| `mintCap` | Total Shares/Loot the navigator may ever mint (navigator-local) |
 | `perAddressCap` | The most any single address can mint |
-| Allowlist | Optional — restrict joining to approved addresses |
+| Allowlist | Optional — restrict joining to approved addresses (Merkle) |
 | Expiry | Optional — the navigator stops minting after this time |
-| Pause | A `GOVERNOR` can pause/unpause onboarding at any time |
+| Pause | A `GOVERNOR` (or the vault) can pause/unpause onboarding at any time |
 
-<Callout type="warning" title="Navigators are trusted code">
-A navigator with `MANAGER` permission can mint tokens. Only enable navigators that are immutable, audited, and bounded by a `mintCap` and (where appropriate) an allowlist. Governance can always pause or revoke one, but treat enabling a navigator as a high-trust action.
+The [ERC-20 Tribute](/docs/navigators/erc20-tribute) navigator takes the same shape but is paid in a
+chosen ERC-20, with permit support for one-transaction joins.
+
+### Configure an NFT-Gate
+
+Gate membership on an existing **ERC-721** collection — anyone who owns a token can claim a fixed
+amount of Shares and/or Loot:
+
+| Setting | What it does |
+| --- | --- |
+| Gate collection | The ERC-721 contract address that grants eligibility |
+| Shares / Loot per holder | The fixed amount minted on each successful claim |
+| Mode | **Free** (no payment) or **tribute** (an exact native amount, forwarded to the treasury) |
+| `mintCap` | **Mandatory** — the contract refuses a zero cap |
+| `perAddressCap` | Per *wallet* — a sanity bound, not an anti-whale guarantee for a transferable collection |
+| Allowlist / Expiry / Pause | Optional extra gating, cutoff time, and a governance pause switch |
+
+<Callout type="info" title="One claim per token — and Shares are a ticket">
+Each token ID can onboard exactly once, ever. The minted Shares stay with whoever claimed them even if
+the NFT is sold — the buyer of an already-claimed token gets nothing. The app shows each token's claim
+status. See [NFT-Gate](/docs/navigators/nft-gate) for the full model.
 </Callout>
 
-## How members join through a navigator
+## Sanction a read-only navigator (Signal)
 
-Once a navigator is live, a prospective member opens the DAO's **Navigators** page in the app, picks the navigator, and submits their tribute (or NFT claim). Shares and/or Loot are minted to them in the same transaction — no proposal, no waiting. Newly minted Shares self-delegate, so their voting power is active immediately.
+The [Signal](/docs/navigators/signal) poll engine takes **no permission** — it only reads voting
+power. So instead of a permission grant, the DAO **sanctions** it: the vault posts a
+`daoships.dao.navigators` list naming the navigator (a governance action the app guides you through).
+Until then, its polls are not indexed and the app hides them.
+
+<Callout type="warning" title="Signal is post-launch only">
+A Signal navigator deployed during the launch wizard is dropped — the DAO doesn't exist on the indexer
+yet, so there's nothing to sanction it against. Deploy Signal from the DAO's **Navigators** page after
+launch, then sanction it. Once sanctioned, the indexer backfills any polls it already created.
+</Callout>
+
+## Enable a module navigator (Budget)
+
+The [Budget](/docs/navigators/budget) navigator spends the **treasury**, so it isn't a `DAOShip`
+permission at all — it's a **module on the Quai Vault**. You enable it with a proposal that calls
+`enableModule` on the vault, exactly like any Zodiac module. A deployed-but-not-enabled Budget
+navigator is powerless and hidden until that proposal processes. After it's enabled, governance
+approves individual budgets and a designated manager disburses within them — no proposal per payment.
+
+## How members and managers interact
+
+Once a navigator is endorsed, people use it from the DAO's **Navigators** page in the app:
+
+- **Onboarder / ERC-20 Tribute** — submit the tribute and receive Shares and/or Loot in the same
+  transaction. Newly minted Shares self-delegate, so voting power is active immediately.
+- **NFT-Gate** — pick a token you own from the gating collection and claim (paying the tribute if the
+  navigator requires one).
+- **Signal** — create a poll or cast a share-weighted vote during its window.
+- **Vesting** — beneficiaries claim vested Shares or Loot as they accrue.
+- **Budget** — the budget's manager disburses to recipients within the per-period allowance.
+- **Subscription** — members pay their dues to stay current; anyone can collect a lapsed member.
 
 ## Related
 
+- [Navigators overview &amp; catalog](/docs/navigators/overview) — every navigator and the trust model
 - [Navigators](/docs/concepts/navigators) — the permission model in depth
-- [Manage members & shares](/docs/guides/manage-members) — manual membership via proposals
+- [Manage members &amp; shares](/docs/guides/manage-members) — manual membership via proposals
 - [Configure governance](/docs/guides/governance-parameters) — tune the rules around onboarding

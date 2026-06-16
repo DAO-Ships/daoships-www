@@ -1,7 +1,7 @@
 export const metadata = {
   title: "The Indexer",
   description:
-    "How the DAO Ships event-driven Supabase indexer stores on-chain state in ds_* tables, and how to query it with supabase-js, PostgREST, and Realtime.",
+    "How the DAO Ships event-driven Supabase indexer stores on-chain state in ds_* tables across the core governance and navigator suite, and how to query it with supabase-js, PostgREST, and Realtime.",
 };
 
 # The Indexer
@@ -12,8 +12,9 @@ transfers. The **DAO Ships indexer** solves this by consuming on-chain events an
 structured rows into a Supabase (PostgreSQL) database your frontend can query directly.
 
 The indexer is **event-driven**: every row derives from on-chain events, with zero RPC calls in
-its handlers. Counter operations are idempotent (safe to retry), and it indexes 24 distinct event
-types across the launcher, governance, tokens, navigators, and `Poster`.
+its handlers. Counter operations are idempotent (safe to retry under reorg or replay), and it
+indexes more than two dozen distinct event types across the launcher, governance, tokens, the
+full navigator suite, and `Poster`.
 
 ## Schema per network
 
@@ -21,22 +22,169 @@ Each network is an isolated PostgreSQL schema — `testnet` today, `mainnet` at 
 table is prefixed `ds_`. Point your client at the schema for the network you're reading (see the
 query examples below).
 
-## The ds_* tables
+## Core tables
 
-| Table | Purpose |
-|-------|---------|
-| `ds_daos` | DAO records — governance params, token totals, profile |
-| `ds_members` | Member share/loot balances, delegation, vote counts |
-| `ds_proposals` | Proposal lifecycle (submit, sponsor, vote, process, cancel) |
-| `ds_votes` | Individual vote records |
-| `ds_navigators` | Registered navigators with permissions and type |
-| `ds_navigator_events` | Onboard events emitted by navigators |
-| `ds_ragequits` | Member exit records with per-token amounts |
-| `ds_records` | `Poster` metadata (profiles, rationale, announcements) |
-| `ds_guild_tokens` | Registered ragequit tokens |
-| `ds_delegations` | Delegation change history |
-| `ds_event_transactions` / `ds_processed_logs` | Dedup tracking for retry idempotency |
-| `ds_indexer_state` | Last processed block and sync state |
+These tables are always present. The frontend-relevant columns are listed for each — see the
+[Frontend integration](/docs/developers/frontend-integration) page for full row types.
+
+| Table | Purpose | Key frontend columns |
+|-------|---------|----------------------|
+| `ds_daos` | DAO records — governance params, token totals, profile | `id` (address), `avatar`, `shares_address`, `loot_address`, `total_shares`, `total_loot`, `active_member_count`, `proposal_count`, `voting_period`, `grace_period`, `quorum_percent`, `sponsor_threshold`, `min_retention_percent`, `name`, `description`, `avatar_img`, `profile_source` |
+| `ds_members` | Member share/loot balances, delegation, vote counts | `id`, `dao_id`, `member_address`, `shares`, `loot`, `delegating_to`, `voting_power`, `votes`, `last_activity_at` |
+| `ds_proposals` | Proposal lifecycle (submit, sponsor, vote, process, cancel) | `id`, `dao_id`, `proposal_id`, `submitter`, `sponsor`, `yes_balance`, `no_balance`, `yes_votes`, `no_votes`, `voting_starts`, `voting_ends`, `grace_ends`, `expiration`, `cancelled`, `processed`, `passed`, `sponsored`, `details`, `proposal_data` |
+| `ds_votes` | Individual vote records | `proposal_id`, `voter`, `approved`, `balance`, `block_number` |
+| `ds_navigators` | Registered navigators with type, permission, and trust | see [Navigator discovery](#navigator-discovery-and-the-three-trust-classes) |
+| `ds_navigator_events` | Generic onboard events emitted by navigators | `dao_id`, `navigator_address`, `event_type` (`onboard`), `contributor`, `shares_minted`, `loot_minted`, `amount` |
+| `ds_ragequits` | Member exit records with per-token amounts | `dao_id`, `member_address`, `to_address`, `shares_burned`, `loot_burned`, `tokens[]`, `amounts[]` |
+| `ds_records` | `Poster` metadata (profiles, rationale, announcements) | `dao_id` (nullable), `user_address`, `tag`, `content_type`, `content` (RAW/UNTRUSTED), `content_json` (validated), `trust_level`, `block_number` |
+| `ds_guild_tokens` | Registered ragequit tokens | `dao_id`, `token_address`, `enabled` |
+| `ds_delegations` | Delegation change history | `dao_id`, `delegator`, `from_delegate`, `to_delegate`, `tx_hash` |
+| `ds_event_transactions` / `ds_processed_logs` | Dedup tracking for retry idempotency | (internal) |
+| `ds_indexer_state` | Last processed block and sync state | `last_block_number`, `is_syncing`, `requires_full_reindex`, `reindex_reason`, `chain_id` |
+
+## Per-navigator tables
+
+Each navigator type writes to its own dedicated tables in addition to the generic
+`ds_navigator_events` feed. Every table carries `navigator_address` (and usually `dao_id`) so you
+can scope queries to one navigator or one DAO.
+
+### NFT-Gate
+
+Backs the [NFT-gate navigator](/docs/navigators/nft-gate).
+
+| Table | Key columns |
+|-------|-------------|
+| `ds_nft_claims` | `id` (= `navigatorAddress-tokenId`), `dao_id`, `navigator_address`, `token_id`, `holder` (original claimer), `shares`, `loot` |
+
+A token can be claimed exactly once, ever, so a frontend can answer "is token #N claimed?" in O(1)
+by reading the row with `id = navigatorAddress-tokenId` — a present row means claimed, with
+`holder` the original claimer. The claim also writes a generic `event_type='onboard'` row in
+`ds_navigator_events`; the two are complementary, not duplicates, so don't sum both when tallying
+minted amounts.
+
+### Signal
+
+Backs the [Signal navigator](/docs/navigators/signal). Rows are materialized **only** when the
+navigator's `trust_status='sanctioned'` (see below).
+
+| Table | Key columns |
+|-------|-------------|
+| `ds_signal_polls` | `navigator_address`, `poll_id`, `creator`, `question`, `option_count`, `snapshot_timestamp`, `voting_starts`, `voting_ends`, `cancelled`, `tally` (NUMERIC[], derived), `options` (off-chain labels) |
+| `ds_signal_votes` | `poll_id`, `voter`, `option`, `weight` (snapshot shares) |
+
+`tally` is the indexer's authoritative per-option result (derived from the vote rows); `options`
+holds off-chain human labels and is null until the creator's labels post is indexed — render
+numeric `Option 1..n` as a fallback. `weight` is share power at the snapshot and excludes loot.
+
+### Timelock
+
+Backs the [Timelock navigator](/docs/navigators/timelock). Permissioned, so always sanctioned.
+
+| Table | Key columns |
+|-------|-------------|
+| `ds_timelock_changes` | `navigator_address`, `change_id`, `queued_by`, `config_hash`, `governance_config` (FULL bytes), `executable_after`, `expires_at`, `status` (`queued` / `executed` / `cancelled`) |
+| `ds_governance_config_history` | `dao_id`, the 7 config fields, `bypassed_timelock` (boolean) |
+
+`governance_config` stores the full ABI-encoded bytes so anyone can crank `executeChange` — on-chain
+only the hash is kept. `bypassed_timelock=true` means a config change applied directly while a
+timelock was active (it skipped the delay) — surface a warning.
+
+### Vesting
+
+Backs the [Vesting navigator](/docs/navigators/vesting). Permissioned, so always sanctioned.
+
+| Table | Key columns |
+|-------|-------------|
+| `ds_vesting_schedules` | `navigator_address`, `schedule_id`, `beneficiary`, `total_amount`, `claimed` (SUM of claims), `is_loot`, `start_time`, `cliff_end`, `vesting_end`, `revoked`, `revoked_at` |
+| `ds_vesting_claims` | incremental `amount` per claim |
+
+`claimed` is derived from the claim rows. Vesting is not balance — member voting and economic weight
+come from `ds_members` (fed by the paired token `Transfer` on each claim), never from these rows.
+
+### Budget
+
+Backs the [Budget navigator](/docs/navigators/budget). The **module** trust class — gate every query
+on `trust_status='sanctioned'`.
+
+| Table | Key columns |
+|-------|-------------|
+| `ds_budgets` | `navigator_address`, `budget_id`, `manager`, `token` (`0x0` = native), `allowance_per_period`, `total_ceiling`, `total_spent` (SUM), `period_length`, `starts_at`, `ends_at`, `cancelled` |
+| `ds_budget_disbursements` | `recipient`, `token`, `amount` (one row per recipient) |
+| `ds_vault_module_events` | `vault`, `navigator_address`, `enabled` (boolean) — the Budget trust feed |
+
+`total_spent` is the derived lifetime SUM; for an exact live "remaining this period" figure read the
+contract views rather than the stored cumulative. Treasury balances come from the paired vault
+transfer, not from these rows — don't double-count.
+
+### Subscription
+
+Backs the [Subscription navigator](/docs/navigators/subscription). Permissioned, so always sanctioned.
+
+| Table | Key columns |
+|-------|-------------|
+| `ds_subscription_members` | `member`, `paid_through` (absolute unix secs), `total_paid` (SUM), `last_collected_at` |
+| `ds_subscription_payments` | `member`, `payer`, `token`, `amount`, `periods`, `paid_through` |
+| `ds_subscription_collections` | `member`, `collector`, `shares_removed`, `reward`, `burned` (boolean) |
+
+Membership is one row per member per navigator. `paid_through` is the whole enrollment state — the
+absolute timestamp the member is paid up through, `0` meaning not enrolled. `total_paid` is the
+derived SUM of payment amounts.
+
+## Navigator discovery and the three trust classes
+
+Every navigator announces itself with a `NavigatorDeployed` event and is recorded in `ds_navigators`
+against the DAO it names. Because anyone can deploy a contract claiming any DAO, that binding is not
+automatically trustworthy — `ds_navigators` carries the columns you need to decide.
+
+| Column | Meaning |
+|--------|---------|
+| `dao_id` | The DAO this navigator names (bound at deploy for every navigator) |
+| `navigator_address` | The navigator contract |
+| `navigator_type` | `OnboarderNavigator`, `ERC20TributeNavigator`, `NFTGatedNavigator`, `SignalNavigator`, `TimelockNavigator`, `VestingNavigator`, `BudgetNavigator`, `SubscriptionNavigator` |
+| `permission` | Permission bitmask (0 = none) |
+| `permission_label` | Human label for the bitmask (`none`, `admin`, `manager`, `governor`, `all`, etc.) |
+| `permission_ever_granted` | TRUE once a `NavigatorSet` with permission &gt; 0 was seen — distinguishes a REVOKED nav from a born read-only one |
+| `trust_status` | `self_asserted`, `sanctioned`, `unsanctioned`, or `fabricated` |
+| `is_active` | "Functional now?" — NOT "has permission" |
+| `paused` | Whether the navigator is paused |
+| `deployer`, `name`, `description`, `deploy_block`, `allowlist_root`, `config` (JSONB) | Deploy-time metadata |
+
+There are **three trust classes**, distinguished by how a navigator earns its sanction:
+
+- **Permissioned** (Onboarder, ERC20Tribute, NFT-Gate, Timelock, Vesting, Subscription) — discovered
+  and sanctioned via `NavigatorSet`. The DAO granting a permission bit is the vouch, so these are
+  born `sanctioned`.
+- **Read-only** (Signal) — holds no permission. Sanctioned via a vault `daoships.dao.navigators`
+  `Poster` post; its poll history is backfilled on sanction.
+- **Module** (Budget) — authority is being an enabled Zodiac module on the vault. Sanctioned via a
+  vault `EnabledModule` event (the indexer derives trust from `ds_vault_module_events`).
+
+<Callout type="warning" title="Trust-gate read-only and module navigators">
+A read-only (Signal) or module (Budget) navigator's data is materialized **only** when
+`trust_status='sanctioned'`. A `self_asserted` navigator looks identical on-chain whether the DAO
+endorsed it or not, so a frontend MUST filter on `trust_status='sanctioned'` before showing its
+polls or budgets. "No rows" for a `self_asserted` navigator is expected, not a bug. Permissioned
+navigators are always sanctioned, so this gating affects only the Signal and Budget classes. See the
+[Navigators overview](/docs/navigators/overview#the-three-trust-classes).
+</Callout>
+
+`is_active` reflects functionality, not permission: a read-only navigator stays `is_active=true` at
+`permission=0`, a module navigator is `is_active=false` until the vault enables it, and a permissioned
+navigator is inert until granted. Filtering `is_active=true` is still the right "show usable
+navigators" filter.
+
+## Status is time-derived, totals are derive-from-truth
+
+Lifecycle **status** is not stored as a single column. For proposals, signal polls, timelock changes,
+vesting schedules, budgets, and subscription members you compute status **client-side** from the
+timestamp columns. Use the pre-calculated boundaries the indexer already stores — `voting_starts`,
+`voting_ends`, `grace_ends`, `expiration`, `executable_after`, `expires_at`, `cliff_end`,
+`vesting_end`, `paid_through` — rather than doing the period arithmetic yourself.
+
+Aggregate **totals** are recomputed from their source rows on every change, not incremented in place.
+`total_shares` (from member balances), poll `tally` (from vote rows), vesting `claimed` (from claim
+rows), budget `total_spent` (from disbursement rows), and subscription `total_paid` (from payment
+rows) are all derive-from-truth, which makes them replay- and reorg-safe.
 
 ## NUMERIC(78,0) maps to strings
 
@@ -49,7 +197,10 @@ const totalShares = BigInt(dao.total_shares); // dao.total_shares is a string
 ```
 
 Smaller integer columns (`voting_period`, `proposal_count`, `yes_votes`, `block_number`) are
-`BIGINT` and are safe as numbers within typical ranges.
+`BIGINT` and are safe as numbers within typical ranges. Note that small `NUMERIC` values (a
+`poll_id`, `change_id`, or `schedule_id` of `0`) can arrive as a JSON **number** rather than a
+string — so even values that look numeric should be coerced with `BigInt(String(x))` before any
+comparison or arithmetic.
 
 ## Querying with supabase-js
 
@@ -106,8 +257,9 @@ the sanitized `content_json` column, and respect the `trust_level` field (`VERIF
 ## Realtime subscriptions
 
 `ds_daos`, `ds_proposals`, `ds_members`, `ds_votes`, `ds_records`, `ds_navigators`,
-`ds_navigator_events`, and `ds_indexer_state` are published to Supabase Realtime. Subscribe to
-live-update a vote tally:
+`ds_navigator_events`, `ds_nft_claims`, `ds_signal_polls`, `ds_signal_votes`, `ds_timelock_changes`,
+`ds_governance_config_history`, `ds_vesting_schedules`, `ds_budgets`, `ds_subscription_members`, and
+`ds_indexer_state` are published to Supabase Realtime. Subscribe to live-update a vote tally:
 
 ```ts
 const channel = supabase
@@ -122,6 +274,10 @@ const channel = supabase
   .subscribe();
 ```
 
+High-volume append-only feeds (`ds_vesting_claims`, `ds_subscription_payments`,
+`ds_subscription_collections`) are intentionally not published. Subscribe to the parent row instead —
+its derived totals and `updated_at` change on every claim/payment — and re-read the feed on demand.
+
 ## Querying over PostgREST directly
 
 supabase-js is a thin wrapper over PostgREST. You can hit the REST endpoint directly — set the
@@ -134,7 +290,18 @@ curl "$SUPABASE_URL/rest/v1/ds_daos?select=id,name,total_shares&order=updated_at
   -H "Accept-Profile: testnet"
 ```
 
-For the contracts the indexer watches and the full event list, see
-[Contracts](/docs/developers/contracts) and [Architecture](/docs/developers/architecture).
-Navigator addresses are discovered dynamically from `NavigatorSet` events — no static config is
-needed.
+### Operational signals
+
+The indexer health surface lives in `ds_indexer_state`. When `requires_full_reindex` is `true`
+(with `reindex_reason` explaining why), show a non-blocking "data may be stale" banner — this is a
+re-sync in progress, **not** "indexer down", so don't block the UI. Health responses are cached about
+5 seconds server-side, so don't poll faster than that.
+
+## Render it safely
+
+For escaping untrusted Poster content (XSS), rendering by `trust_level`, normalizing addresses to
+lowercase, and realtime reconnection rules, see the
+[Frontend integration](/docs/developers/frontend-integration) page. For the contracts the indexer
+watches and the full event list, see [Contracts](/docs/developers/contracts) and
+[Architecture](/docs/developers/architecture). Navigator addresses are discovered dynamically from
+on-chain events — no static config is needed.

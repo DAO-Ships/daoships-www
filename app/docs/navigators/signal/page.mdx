@@ -1,0 +1,141 @@
+export const metadata = {
+  title: "Signal Navigator — Non-binding Polls",
+  description:
+    "The Signal navigator runs non-binding, share-weighted governance polls. It is read-only — it takes no permission and never mutates the DAO — and is endorsed socially by the vault sanctioning it after launch.",
+};
+
+# Signal Navigator
+
+The Signal navigator runs **non-binding, share-weighted governance polls** — "temperature checks"
+that let a ship read the room before committing to a binding vote. A member opens a poll, others cast
+share-weighted votes, and anyone reads the running tally. Nothing executes on-chain: a poll mints
+nothing, burns nothing, and queues nothing. The worst case of a bug is a mis-tallied non-binding poll.
+
+<Callout type="info" title="One-sentence version">
+Signal is a read-only navigator that runs share-weighted polls whose results inform — but never
+execute — governance.
+</Callout>
+
+**Class: Read-only · Permission: none.** Signal holds no `DAOShip` permission bit and never calls a
+mutating function on the DAO — it only *reads* delegation-aware voting power. Because it is read-only
+it is endorsed **socially**, not by a permission grant. See the
+[Navigators overview](/docs/navigators/overview) for the three trust classes.
+
+<Callout type="warning" title="A Signal poll is not a Signal proposal">
+A Signal **poll** (this navigator) is different from a non-executing Signal / Announcement
+**proposal**. The latter is an ordinary governance proposal that just posts text and passes through
+the normal [proposal lifecycle](/docs/concepts/proposal-lifecycle). Signal polls live in this
+navigator's own storage — they are share-weighted, time-boxed, and never execute anything.
+</Callout>
+
+## How polls work
+
+A poll captures voting power at a **snapshot**, weights each vote by that snapshot, and accepts votes
+only inside a fixed time window.
+
+- **Share-weighted, Loot excluded.** Vote weight is `daoShip.getPriorVotes(voter, snapshotTimestamp)`
+  — the same delegation-aware Shares power binding proposals use. Loot carries no weight at all. A
+  voter with zero Shares power at the snapshot is rejected. See
+  [Shares vs Loot](/docs/concepts/shares-vs-loot).
+- **Snapshot at poll start, not creation.** Each poll stores `snapshotTimestamp = votingStarts - 1`.
+  Weight is fixed the instant voting opens and cannot be changed by later delegation moves — this is
+  an anti vote-buying design. Shares or delegations acquired *after* voting opens carry zero weight;
+  anything settled *before* the start counts.
+- **Immediate or scheduled.** `startTime == 0` opens the poll immediately. Otherwise it is scheduled,
+  with `now <= startTime <= now + maxStartDelay`.
+- **2–10 options, one vote per address.** A poll has between 2 and 10 options. Each address may vote
+  once per poll.
+- **Half-open voting window `[votingStarts, votingEnds)`.** The poll is votable at exactly
+  `votingStarts` and closed at exactly `votingEnds` — the last votable second is `votingEnds - 1`.
+- **`minSharesToCreatePoll` gates creation.** This threshold (checked against the creator's power at
+  creation time) is the only spam control on opening a poll. Voting always requires non-zero snapshot
+  power regardless of this setting.
+
+<Callout type="tip" title="Cancel control flips at start">
+Before voting opens, the **creator or the vault/avatar** may cancel a poll. Once voting has opened,
+**only the avatar** may cancel — so a creator who is losing an in-progress poll cannot nuke it.
+Neither party can cancel a poll that has already ended.
+</Callout>
+
+## Poll lifecycle
+
+Status is derived purely from timestamps plus the `cancelled` flag — it is never stored. `Cancelled`
+is terminal and overrides every other state.
+
+| Status | When | Notes |
+| --- | --- | --- |
+| **Pending** | `now < votingStarts` | Scheduled poll waiting to open; creator or avatar may cancel |
+| **Active** | `votingStarts <= now < votingEnds` | Votes accepted; only the avatar may cancel |
+| **Ended** | `now >= votingEnds` | Tally is final; nothing more can change |
+| **Cancelled** | `cancelled` set | Terminal — overrides all of the above |
+
+There is no `ReentrancyGuard` and no pause: the navigator moves no value and makes no untrusted
+external calls, so there is nothing to re-enter and nothing to freeze.
+
+## Trust &amp; visibility — Signal is post-launch only
+
+This is the most important operational point. Signal is a read-only class, so it is endorsed by the
+DAO **sanctioning** it, not by a permission grant.
+
+- A freshly deployed Signal navigator is **`self_asserted`**. Its polls are **not indexed and not
+  shown** — this is the spam guard.
+- It becomes **`sanctioned`** only when the DAO's vault posts a `daoships.dao.navigators` list naming
+  it. That post is a governance action, grants zero permission, and changes only how the navigator is
+  *displayed*. On sanction, the indexer **backfills the poll history**.
+
+<Callout type="danger" title="You cannot add Signal in the launch wizard">
+Because sanctioning requires the DAO to already exist on the indexer, a Signal navigator deployed
+during the launch wizard is **dropped** — the DAO is not yet indexed. Add Signal from the DAO's
+**Navigators** page *after* launch, then sanction it with a vault `daoships.dao.navigators` post.
+Until it is sanctioned, none of its polls are visible.
+</Callout>
+
+## Option labels
+
+The contract stores only `optionCount` on-chain; options are bare indices `0..optionCount-1`. Human-
+readable labels are **optional and off-chain**: the poll creator posts a `daoships.signal.poll` Poster
+record carrying the option text (and an optional description and discussion link). The post is honored
+only when it comes from the poll's creator, has exactly `optionCount` labels, and the poll is still
+`Pending` or `Active`. If no valid labels post exists, frontends render numeric `Option 1…n`.
+
+## Create a poll
+
+Opening, sanctioning, and voting in a Signal poll is covered step-by-step in the
+[Use navigators](/docs/guides/use-navigators) guide. The short version: deploy the navigator from the
+DAO's Navigators page after launch, sanction it with a vault `daoships.dao.navigators` post, then any
+member meeting `minSharesToCreatePoll` may open a poll.
+
+## Events &amp; indexer data
+
+The navigator emits three events. None of them carry the DAO — the indexer resolves the DAO from the
+navigator address, and `pollId` is per-navigator (sequential from `0`).
+
+| Event | Fields | Meaning |
+| --- | --- | --- |
+| `PollCreated` | `pollId`, `creator`, `question`, `optionCount`, `snapshotTimestamp`, `votingStarts`, `votingEnds` | A new poll was opened |
+| `Voted` | `pollId`, `voter`, `option`, `weight` | A share-weighted vote was cast; `weight` is the snapshot Share balance |
+| `PollCancelled` | `pollId`, `caller` | A poll was cancelled (terminal) |
+
+The indexer materializes polls **only for sanctioned navigators**:
+
+| Table | Purpose |
+| --- | --- |
+| `ds_signal_polls` | One row per poll; its `tally` is **recomputed from votes** (derive-from-truth), never incremented |
+| `ds_signal_votes` | One row per address per poll; each `weight` is the snapshot Share balance straight from the `Voted` event (Loot excluded) |
+
+For the full schema and handler design, see the
+[Indexer &amp; data layer](/docs/developers/indexer).
+
+<Callout type="info" title="Audit status">
+The Signal navigator was reviewed across security, gas, and correctness lenses with **no
+Critical/High findings**. Hardening applied: window caps (`MAX_WINDOW` of 3650 days) on both duration
+and scheduling, and expanded boundary and multi-poll tests.
+</Callout>
+
+## Related
+
+- [Navigators — Overview &amp; Catalog](/docs/navigators/overview)
+- [Shares vs Loot](/docs/concepts/shares-vs-loot)
+- [Proposal lifecycle](/docs/concepts/proposal-lifecycle)
+- [Use navigators](/docs/guides/use-navigators)
+- [Indexer &amp; data layer](/docs/developers/indexer)

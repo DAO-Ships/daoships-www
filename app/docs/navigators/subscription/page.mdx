@@ -1,0 +1,143 @@
+export const metadata = {
+  title: "Subscription Navigator",
+  description:
+    "Recurring membership dues for a DAO Ships DAO: members pull-pay an immutable token menu to stay current, and a permissionless keeper strips the Shares of anyone who lapses past grace — converting them to Loot or burning them.",
+};
+
+# Subscription Navigator
+
+The Subscription navigator turns membership into a recurring bill. Members **pull-pay** periodic dues
+to keep their seat; the fee is forwarded straight to the treasury. When a member lapses past a grace
+window, **anyone** can strip their Shares for a small Loot reward, funding a permissionless keeper that
+keeps the roster honest without a vote per delinquency.
+
+<Callout type="info" title="One-sentence version">
+Members pay to stay enrolled; if they stop paying past grace, a keeper removes their Shares — converting
+them to Loot by default, or burning them — and earns a capped Loot reward for doing it.
+</Callout>
+
+**Class:** Permissioned · **MANAGER (2)**. It calls `burnShares` / `convertSharesToLoot` for enforcement
+and `mintLoot` for the keeper reward. Endorse it with a `setNavigators` proposal. It is a post-launch
+navigator — add it from the DAO's **Navigators** page, not the launch wizard.
+
+## How dues work — the payment clock
+
+Every enrolled member has a single piece of state: `paidThrough[member]`, an absolute unix timestamp
+**through which the member is paid up**. It is both the enrollment flag and the payment deadline —
+`0` means not enrolled (or collected and un-enrolled). A member calls `payFee` to push that timestamp
+forward; `payFeeFor` lets someone pay on another member's behalf (a gift or sponsorship — the payer
+funds it).
+
+Catch-up is a **debt model, not forgiveness**: `payFee` advances `paidThrough` forward **from the
+member's current standing**, so missed periods are caught up rather than wiped. Paying one period when
+several are owed leaves the member still behind.
+
+### The token menu is immutable
+
+Accepted payment is a menu fixed at deploy: parallel `tokens[]` / `feesPerPeriod[]` arrays. An entry of
+`address(0)` is native QUAI; any other address is an ERC-20 (WQI, USDT, USDC, and so on). The member
+**chooses** which accepted token to pay in at `payFee`, and the price per period is a fixed
+governance-set amount per token — there is no price oracle. To change the menu, prices, period, grace,
+reward, or enforcement mode, governance deploys a **new** navigator and re-registers it.
+
+## Member states
+
+State is time-derived from `paidThrough` and the navigator's immutable `graceDuration` — there is no
+stored status to keep in sync.
+
+| State | Condition |
+| --- | --- |
+| `current` | `now <= paidThrough` |
+| `grace` | `paidThrough < now <= paidThrough + graceDuration` |
+| `delinquent` | `now > paidThrough + graceDuration` — collectible |
+
+### Governance enrollment grants a free period
+
+A member's own first `payFee` self-enrolls with **no** complimentary period — they paid for what they
+got. By contrast, governance enrollment (`enroll` / `enrollBatch`) grants **one complimentary full
+period** before dues begin. That makes it safe to retrofit dues onto an existing DAO: every enrollee
+gets a full period plus grace before they can ever be collected, so bolting on this navigator can never
+retroactively mass-eject the roster. `enroll` reverts if the member is already enrolled; `enrollBatch`
+silently skips already-enrolled members so an overlapping batch still lands.
+
+## Permissionless keeper collection
+
+Once a member is past grace, **anyone** can call `collectFee(member)`. The call:
+
+- removes **all** of that member's current Shares (read live at collection time — not a per-period slice),
+- un-enrolls them (`paidThrough` resets to `0`, so a later return starts fresh), and
+- mints the caller a Loot reward of `collectorRewardBps` of the removed Shares, capped at
+  `MAX_COLLECTOR_BPS` = **1000 bps (10%)**.
+
+A member avoids this only by curing — paying before grace ends.
+
+## Enforcement modes
+
+The enforcement mode is immutable at deploy via `burnOnCollect`:
+
+| Mode | Effect on collected Shares | Member keeps |
+| --- | --- | --- |
+| `burnOnCollect = false` (default) | `convertSharesToLoot` — Shares become Loot 1:1 | Economic value (Loot), loses the vote |
+| `burnOnCollect = true` | `burnShares` — Shares destroyed | Nothing |
+
+The non-destructive default is a ragequit-style ejection: it removes the **vote**, not the equity. Burn
+mode is a punitive seizure that shrinks supply.
+
+<Callout type="warning" title="Sponsor-threshold floor can block collection">
+Removing a member's Shares reverts if it would drop the Shares' total supply below the DAO's
+`sponsorThreshold`. Collecting a member who holds a large fraction of all Shares can therefore be
+**un-callable** in a small DAO — the core revert bubbles up and the whole `collectFee` rolls back, so
+the member stays enrolled and delinquent. This is intentional (an automated collection must not
+deadlock governance). For very large members, pause the navigator and handle the removal through
+governance instead.
+</Callout>
+
+Pause freezes `payFee`, `enroll`, **and** `collectFee` — a paused subscription also shields members from
+enforcement — and is callable by a GOVERNOR navigator or the avatar. `withdrawStuckTokens`, which
+recovers mis-sent ERC-20s, is avatar-only. Pause never alters any member's clock.
+
+## Add it
+
+Subscription is a permissioned navigator added **after launch**:
+
+1. **Register with MANAGER** — pass a Navigators proposal calling `setNavigators([subNav], [2])`. The
+   moment it processes, the navigator can collect. This fires `NavigatorSet(subNav, 2)` and the indexer
+   marks it `sanctioned`.
+2. **(Optional) Enroll the roster** — pass `enroll` / `enrollBatch` proposals to bring existing members
+   under dues with one complimentary period each. New members self-enroll on their first `payFee`.
+
+To revoke it, re-register with permission `0`; to change any setting, deploy a corrected instance. See
+[Use navigators](/docs/guides/use-navigators) for the full endorsement flow.
+
+## Events &amp; indexer data
+
+| Event | Meaning |
+| --- | --- |
+| `MemberEnrolled` | Governance enrollment or an initial member — sets the complimentary `paidThrough` |
+| `FeePaid` | A `payFee` / `payFeeFor` — carries `payer`, `token`, `amount`, `periods`, new `paidThrough` |
+| `FeeCollected` | A keeper collection — carries `sharesRemoved`, `reward`, and `burned` (mode flag) |
+| `StuckTokensRecovered` | An avatar-only `withdrawStuckTokens` |
+| `Paused` / `Unpaused` | The shared freeze of all three rails |
+
+The indexer materializes three tables:
+
+- `ds_subscription_members` — one row per member; `total_paid` is the **SUM** of payments
+  (derive-from-truth, never an inline `+=`), and status is time-derived from `paid_through`.
+- `ds_subscription_payments` — one row per `FeePaid`.
+- `ds_subscription_collections` — one row per `FeeCollected`.
+
+<Callout type="tip" title="Balances come from the cap table, not these rows">
+A member's actual Share / Loot balance and voting power come from the core cap-table events
+(`ConvertSharesToLoot`, `BurnShares`, `MintLoot`), not the subscription tables. Treat the subscription
+rows as the activity feed only. See [Indexer &amp; data layer](/docs/developers/indexer).
+</Callout>
+
+The contract carries **no Critical, High, or Medium audit findings**.
+
+## Related
+
+- [Navigators — overview &amp; catalog](/docs/navigators/overview) — the permission model and trust classes
+- [Shares vs. Loot](/docs/concepts/shares-vs-loot) — what conversion and burning do to a member
+- [Quorum, grace &amp; retention](/docs/concepts/quorum-grace-retention) — how grace windows shape participation
+- [Use navigators](/docs/guides/use-navigators) — add, sanction, and enroll
+- [Indexer &amp; data layer](/docs/developers/indexer) — the tables that back this navigator

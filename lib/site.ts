@@ -13,10 +13,8 @@ export const site = {
   launchUrl: `${APP_URL}/launch`,
   exploreUrl: `${APP_URL}/explore`,
   appUrl: APP_URL,
-  // TODO(confirm): these social links are unverified placeholders.
-  github: "https://github.com/daoships",
-  discord: "https://discord.gg/quai",
-  x: "https://x.com/daoships",
+  // Org hosting the open-source repos (verified from git remotes).
+  github: "https://github.com/DAO-Ships",
   quai: "https://qu.ai",
   quaiVault: "https://quaivault.org",
 };

@@ -91,14 +91,23 @@ lands on the Cyprus-1 `0x00` shard prefix. See
 
 ## Navigators
 
-`Navigators` are trusted, permissioned extension contracts (for example, onboarding flows that
-mint shares in exchange for QUAI). Governance grants each navigator an additive permission
-bitmask: `ADMIN = 1`, `MANAGER = 2`, `GOVERNOR = 4`. A `MANAGER` navigator can mint and burn
-tokens, so navigators must be immutable and bounded.
+`Navigators` are immutable extension contracts that add behavior to a ship — onboarding, polls,
+vesting, recurring payouts — without changing the `DAOShip` core. Architecturally they fall into
+**three classes**, distinguished by where their authority attaches:
+
+| Class | Attaches to | Example |
+|-------|-------------|---------|
+| Permissioned | `DAOShip`, via an additive bitmask (`ADMIN = 1`, `MANAGER = 2`, `GOVERNOR = 4`) granted with `setNavigators` | Onboarder, Timelock, Vesting |
+| Read-only | Nothing — it only reads `DAOShip` state (e.g. `getPriorVotes`) and is endorsed by a vault `Poster` post | Signal polls |
+| Module | The **Quai Vault**, enabled as a Zodiac module exactly as `DAOShip` is — it moves treasury funds and takes no `DAOShip` permission | Budget |
+
+That last class is the architecturally notable one: a module navigator sits beside `DAOShip` on
+the vault and calls `execTransactionFromModule` itself, rather than routing through governance per
+payment. See [Navigators overview](/docs/navigators/overview) for the full catalog and trust model.
 
 <Callout type="warning" title="Trust model">
-`MANAGER` navigators can mint shares and loot. They run with real power, so they must be
-immutable, reentrancy-guarded, and bounded by mint caps and expiry. See
+A `MANAGER` navigator can mint shares and loot; a vault-module navigator can move funds. They run
+with real power, so they must be immutable, reentrancy-guarded, and bounded by caps and expiry. See
 [Build a Navigator](/docs/developers/build-a-navigator).
 </Callout>
 

@@ -1,0 +1,125 @@
+export const metadata = {
+  title: "ERC-20 Tribute Navigator",
+  description:
+    "The Permissioned MANAGER navigator that mints Shares and Loot in exchange for an ERC-20 token tribute — per-token pricing, single-transaction permit onboarding, and a balance-delta guard that rejects fee-on-transfer tokens.",
+};
+
+# ERC-20 Tribute Navigator
+
+The ERC-20 Tribute Navigator is the same crew role as the [Onboarder](/docs/navigators/onboarder),
+but tribute is paid in an **ERC-20 token** — a stablecoin or your own project token — instead of native
+QUAI. A prospective member names how many Shares and Loot to mint, the navigator pulls the matching
+tribute straight to the vault, and the membership tokens land in the same transaction. You can add it at
+launch or post-launch.
+
+<Callout type="info" title="The one-sentence version">
+Buy Shares or Loot at a fixed per-token price, paid in a configured ERC-20 — with the received amount
+measured on arrival so fee-on-transfer tokens are rejected rather than silently under-credited.
+</Callout>
+
+**Class:** Permissioned · **Permission:** MANAGER (`2`). Like every minting navigator, it must be
+granted MANAGER through a governance `setNavigators` proposal before it can act.
+
+## How it works
+
+A member calls `onboard`, asking for some `sharesToMint` and/or `lootToMint` (both in raw wei, so
+fractional purchases work). The navigator computes the tribute from the per-token price, moves it
+**directly to the DAO vault** with a safe transfer, then mints the requested Shares and Loot to the
+caller. There is no escrow and no accumulation in the navigator — it only ever holds the right to mint.
+
+The tribute is computed per component and summed: `(sharesToMint * pricePerShare) / 1e18` plus
+`(lootToMint * pricePerLoot) / 1e18`. Minting Shares dilutes voting power; minting Loot dilutes
+economic and ragequit value but not votes — see [Shares vs. Loot](/docs/concepts/shares-vs-loot).
+
+It inherits the full `BaseNavigator` toolkit: a navigator-local `mintCap`, a `perAddressCap` per wallet,
+an optional Merkle allowlist, an `expiry`, and `pause`/`unpause`. The same three onboarding entry points
+funnel through one internal path, so caps, allowlist, expiry, and the pause flag are enforced uniformly.
+
+### Two ways to onboard
+
+- **Approve flow** — the member first `approve`s the navigator for the tribute token, then calls
+  `onboard(sharesToMint, lootToMint)` (or the overload taking a Merkle `proof`).
+- **Permit flow** — for [EIP-2612](/docs/navigators/overview) tokens, the frontend signs a gasless
+  permit and calls `onboardWithPermit(sharesToMint, lootToMint, proof, deadline, v, r, s)`, approving
+  and onboarding in a **single transaction**. The permit owner is always `msg.sender`.
+
+## Configuration
+
+These are fixed at deploy. To change pricing, the token, or any bound, deploy a new instance and
+re-register it.
+
+| Parameter | Meaning |
+| --- | --- |
+| `tributeToken` | The ERC-20 accepted as tribute. Reverts `InvalidConfig` if zero. |
+| `pricePerShare` | Tribute per whole Share, in the token's own decimals (e.g. `100e6` = 100 USDC). `0` disables Share sales. |
+| `pricePerLoot` | Tribute per whole Loot, in the token's own decimals. `0` disables Loot sales. At least one price must be non-zero. |
+| `mintCap` | Total Shares + Loot this navigator may mint, raw wei. `0` = unlimited. |
+| `perAddressCap` | Per-wallet Shares + Loot cap, raw wei. `0` = unlimited. |
+| `allowlistRoot` | Optional Merkle root; `bytes32(0)` = open. An allowlisted address still pays the tribute. |
+| `expiry` | Unix timestamp after which onboarding stops. `0` = no expiry. |
+
+<Callout type="warning" title="Prefer a well-behaved, ERC-2612 token">
+Fee-on-transfer and rebasing tokens are rejected at onboard time and cannot be used. Non-ERC-2612
+tokens still work via the approve flow but lose single-transaction permit onboarding. Pick a normal
+ERC-20 such as USDC so members can actually onboard — and so they get the gasless permit path.
+</Callout>
+
+## Gotchas
+
+<Callout type="danger" title="Fee-on-transfer tokens make onboarding revert">
+After moving the tribute to the vault, the navigator measures the actual balance delta. If the received
+amount falls short of the computed tribute — the signature of a fee-on-transfer or diverting token — it
+reverts `InsufficientAmount`. This is the documented defense, reviewed in audit and backed by
+`nonReentrant`; such tokens are not supported, but they never silently under-credit the DAO.
+</Callout>
+
+<Callout type="warning" title="Per-component dust truncation reverts the whole call">
+The zero-tribute check is applied to the Share component and the Loot component **separately**. If
+either side's `(amount * price) / 1e18` rounds to zero, the call reverts `InsufficientAmount` — even if
+the other component is fully paid. This blocks a zero-mint request from piggybacking on a paid one.
+Frontends should pre-compute each component and confirm it is greater than zero before submitting.
+</Callout>
+
+<Callout type="info" title="Permit failures surface as a transfer revert">
+`onboardWithPermit` swallows a failed permit by design — a consumed, front-run, or non-ERC-2612 permit
+falls through to the safe transfer, which uses any existing allowance and reverts if there is none. You
+never get a silent partial onboard; a permit that didn't apply shows up as a transfer revert.
+</Callout>
+
+Two more: revoking the navigator's MANAGER bit is a fail-closed kill switch — minting reverts and the
+tribute is never taken — but use `pause()` for a reversible halt. And `withdrawStuckTokens` is
+**avatar-only**: it recovers tokens mistakenly sent to the navigator address, not a tribute treasury,
+since tribute always lands in the vault.
+
+## Add it
+
+Grant the navigator MANAGER (`2`) through a `setNavigators` governance proposal — at launch or after.
+The [Use navigators](/docs/guides/use-navigators) guide walks the full endorsement flow.
+
+## Events &amp; indexer data
+
+| Event | Emitted when | Notable fields |
+| --- | --- | --- |
+| `Onboard` | A member onboards | `daoShipAddress`, `contributor`, `amount` (tribute paid, token decimals), `shares`, `loot` (raw wei minted) |
+| `StuckTokensRecovered` | Avatar calls `withdrawStuckTokens` | recovered `token`, `to`, `amount` |
+| `Paused` / `Unpaused` | Onboarding halted or resumed | `caller` |
+
+The error to expect is `InsufficientAmount` — it covers both-amounts-zero, a per-component dust
+truncation, and the fee-on-transfer shortfall.
+
+For the [indexer](/docs/developers/indexer), the navigator is recorded in `ds_navigators` and each
+onboard writes a `ds_navigator_events` row with `event_type` `'onboard'`. Take tribute balances from the
+paired `Transfer` event to the vault rather than double-counting against `Onboard.amount`.
+
+<Callout type="tip" title="Audit status">
+No Critical, High, or Medium findings. The fee-on-transfer concern was reviewed and is mitigated by the
+balance-delta check plus `nonReentrant` on every external entry point.
+</Callout>
+
+## Related
+
+- [Navigators — Overview &amp; Catalog](/docs/navigators/overview) — every shipped navigator and the trust classes
+- [Onboarder](/docs/navigators/onboarder) — the native-QUAI sibling with the same shape
+- [Shares vs. Loot](/docs/concepts/shares-vs-loot) — what each minted token grants
+- [Use navigators](/docs/guides/use-navigators) — add, sanction, and enable each class
+- [Indexer &amp; data layer](/docs/developers/indexer) — the tables that back this navigator

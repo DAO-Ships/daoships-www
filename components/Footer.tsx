@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Github, MessageCircle } from "lucide-react";
+import { Github } from "lucide-react";
 import { Logo } from "./Logo";
 import { site } from "@/lib/site";
 
@@ -52,13 +52,6 @@ export function Footer() {
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dao-border text-dao-text-muted transition-colors hover:text-dao-text"
             >
               <Github className="h-4 w-4" />
-            </a>
-            <a
-              href={site.discord}
-              aria-label="Discord"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-dao-border text-dao-text-muted transition-colors hover:text-dao-text"
-            >
-              <MessageCircle className="h-4 w-4" />
             </a>
           </div>
         </div>

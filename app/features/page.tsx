@@ -18,6 +18,11 @@ const proposalTypes = [
   "Navigators", "Profile update", "Announcement", "Custom action",
 ];
 
+const navigatorNames = [
+  "Onboarder", "ERC-20 Tribute", "NFT-Gate", "Signal",
+  "Timelock", "Vesting", "Budget", "Subscription",
+];
+
 const pillars = [
   {
     icon: Vote,
@@ -53,14 +58,15 @@ const pillars = [
     eyebrow: "Navigators",
     title: "Extend a DAO without forking it",
     body:
-      "Navigators are immutable, permissioned plug-ins that add onboarding and treasury logic. Governance grants and revokes them; they can't exceed their bounds.",
+      "Navigators are immutable, governance-endorsed plug-ins that add onboarding, polling, and treasury automation. Eight ship today across three trust classes — each is bounded and revocable, and can't exceed the powers a DAO grants it.",
     points: [
-      { h: "Onboarder", p: "Instant membership for a QUAI tribute — multiplier or fixed-price, with allowlists and caps." },
-      { h: "ERC-20 Tribute", p: "Accept a stablecoin or project token for shares, with permit support." },
-      { h: "NFT-gated", p: "Let holders of a collection claim membership — one claim per token." },
-      { h: "Bounded & immutable", p: "Mint caps, allowlists, and expiry; permissions are an ADMIN / MANAGER / GOVERNOR bitmask." },
+      { h: "Onboard members", p: "Admit crew by native QUAI tribute, an ERC-20 token, or proof of NFT ownership — with allowlists, caps, and expiry." },
+      { h: "Govern safely", p: "A Timelock adds a mandatory delay to config changes; Signal runs non-binding, share-weighted polls before a real vote." },
+      { h: "Automate the treasury", p: "Budgets disburse on a recurring allowance, Subscriptions collect membership dues, and Vesting releases tokens on a cliff + linear schedule." },
+      { h: "Bounded & immutable", p: "Every navigator is endorsed by governance — via a permission bitmask, a vault sanction, or a module enable — and can be paused or revoked." },
     ],
-    docs: "/docs/concepts/navigators",
+    docs: "/docs/navigators/overview",
+    extra: "navigators",
   },
   {
     icon: Radio,
@@ -132,6 +138,26 @@ export default function FeaturesPage() {
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {proposalTypes.map((t) => (
+                      <span
+                        key={t}
+                        className="rounded-full border border-dao-border bg-dao-dark-3/60 px-3 py-1.5 text-sm text-dao-text-secondary"
+                      >
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </Reveal>
+            )}
+
+            {pillar.extra === "navigators" && (
+              <Reveal delay={0.1}>
+                <div className="mt-8">
+                  <p className="font-mono text-xs uppercase tracking-wider text-dao-text-hint">
+                    Eight shipped navigators
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {navigatorNames.map((t) => (
                       <span
                         key={t}
                         className="rounded-full border border-dao-border bg-dao-dark-3/60 px-3 py-1.5 text-sm text-dao-text-secondary"

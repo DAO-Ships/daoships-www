@@ -118,9 +118,9 @@ export const templates: Template[] = [
       { label: "Proposal offering", value: "1 QUAI", note: "Meaningful anti-spam deposit." },
     ],
     navigators: [
-      { name: "Timelock (non-negotiable)", note: "Mandatory delay on sensitive actions." },
-      { name: "RageKick", note: "Force-exit members who violate fund rules." },
-      { name: "Subscription", note: "Deduct a management fee on schedule." },
+      { name: "Timelock (non-negotiable)", note: "Mandatory delay on governance-config changes." },
+      { name: "Subscription", note: "Charge a recurring management fee; lapsed members are collected automatically." },
+      { name: "Vesting (recommended)", note: "Cliff + linear schedules for the fund's core team." },
     ],
     decisions: [
       { title: "Pause the shares", body: "Non-transferable shares prevent someone from buying control of the fund on a secondary market." },
@@ -135,7 +135,7 @@ export const templates: Template[] = [
     tagline: "Fast, programmatic decisions inside guardrails.",
     blurb:
       "An AI-agent collective or bot-managed treasury that needs to decide in seconds — with humans and circuit breakers setting the bounds.",
-    highlights: ["5-minute votes", "Budget navigators", "Circuit breakers", "Allowlisted agents"],
+    highlights: ["5-minute votes", "Budget navigators", "Human brake", "Allowlisted agents"],
     bestFor: ["AI agent collectives", "Automated market-making", "Bot-managed treasuries", "Autonomous services"],
     params: [
       { label: "Voting period", value: "5 minutes", note: "Agents act at machine speed." },
@@ -148,7 +148,7 @@ export const templates: Template[] = [
     navigators: [
       { name: "Onboarder (allowlist only)", note: "Only approved agents can join." },
       { name: "Budget (recommended)", note: "Agents spend within pre-approved budgets — no proposal needed." },
-      { name: "Oracle / Circuit Breaker (recommended)", note: "Auto-adjust params or pause on anomalies." },
+      { name: "Circuit Breaker (planned)", note: "On the roadmap — auto-pause tokens on anomalies. Until it ships, keep vault owners human as the manual brake." },
     ],
     decisions: [
       { title: "Keep humans on the brake", body: "Vault owners remain human (or a human multisig) so the collective can be halted instantly." },

@@ -1,22 +1,45 @@
 export const metadata = {
   title: "Build a Navigator",
   description:
-    "Write a DAO Ships navigator — implement INavigator, extend BaseNavigator, respect the permission bitmask, and let governance enable it via setNavigators.",
+    "Write a DAO Ships navigator — implement INavigator, pick the right trust class (permissioned, read-only, or module), respect the permission bitmask, and let governance endorse it.",
 };
 
 # Build a Navigator
 
-A **navigator** is a trusted, permissioned extension that a DAO grants specific powers — for
-example, an onboarding flow that mints shares in exchange for QUAI. Navigators are how a ship adds
-behavior without changing the immutable `DAOShip` core. This guide shows how to write one safely.
+A **navigator** is an immutable extension contract that adds behavior to a ship without changing the
+immutable `DAOShip` core — onboarding members, vesting tokens, running polls, paying budgets. This
+guide shows how to write one safely.
 
-Start from the shipped examples: `OnboarderNavigator` (QUAI to shares/loot) and
-`ERC20TributeNavigator` (ERC-20 to shares/loot), both built on `BaseNavigator`.
+Navigators come in **three classes**, and the class decides how the DAO endorses your contract and
+whether the indexer surfaces it. Eight navigators ship today as exemplars: Onboarder, ERC-20 Tribute,
+NFT-Gate, Timelock, Vesting, Subscription (permissioned), Signal (read-only), and Budget (module). All
+extend the same patterns; pick the one closest to what you're building and copy it. Start by skimming
+the [Navigators overview](/docs/navigators/overview) for the catalog.
+
+## Three classes of navigator
+
+A navigator's power lives somewhere — on `DAOShip`, in social trust, or on the Quai Vault — and it is
+endorsed where that power lives. This mirrors the [Navigators overview](/docs/navigators/overview); the
+short version:
+
+- **Permissioned** — granted a `DAOShip` permission bit via a governance `setNavigators` proposal. It
+  can mint, burn, pause, or change governance config. Exemplars: Onboarder, ERC-20 Tribute,
+  [NFT-Gate](/docs/navigators/nft-gate), [Timelock](/docs/navigators/timelock),
+  [Vesting](/docs/navigators/vesting), [Subscription](/docs/navigators/subscription).
+- **Read-only** — takes **no** permission and never mutates the DAO; it only reads state. It is
+  endorsed *socially*, by the DAO's vault posting a `daoships.dao.navigators` Poster list that names it.
+  Exemplar: [Signal](/docs/navigators/signal).
+- **Module** — takes **no** `DAOShip` permission. Instead it is enabled as a Zodiac module on the Quai
+  Vault and acts on the treasury via `execTransactionFromModule`. Exemplar:
+  [Budget](/docs/navigators/budget).
+
+Whichever class you build, the constructor still emits `NavigatorDeployed` and the indexer still
+discovers you (more on that below).
 
 ## The INavigator interface
 
-Every navigator implements `INavigator`. It exposes its `deployer`, a compile-time
-`navigatorType`, and emits `NavigatorDeployed` **exactly once, in the constructor**:
+Every navigator implements `INavigator`. It exposes its `deployer`, a compile-time `navigatorType`, and
+emits `NavigatorDeployed` **exactly once, in the constructor**:
 
 ```solidity
 interface INavigator {
@@ -36,13 +59,16 @@ interface INavigator {
 <Callout type="warning" title="Immutable, never proxied">
 Navigators use `immutable` state and MUST NOT sit behind a proxy. Because `NavigatorDeployed` is
 emitted in the constructor, only the deployer can author the name and description — no spoofing or
-metadata poisoning is possible. The indexer reads this event for navigator discovery.
+metadata poisoning is possible. The indexer reads this event for navigator discovery. To change config,
+deploy a new instance and re-endorse it — never upgrade in place.
 </Callout>
 
 ## Extend BaseNavigator
 
-`BaseNavigator` (abstract, inherits `ReentrancyGuard` and `INavigator`) gives you the shared
-machinery: allowlist verification, mint-cap accounting, pause/unpause, and a minting helper. Its
+`BaseNavigator` (abstract, inherits `ReentrancyGuard` and `INavigator`) is the base for the
+**minting** navigators (Onboarder, ERC-20 Tribute, NFT-Gate). It gives you the shared machinery:
+allowlist verification, mint-cap accounting, pause/unpause, and a minting helper. Read-only and some
+permissioned navigators (Signal, Vesting, Timelock) are standalone — see those sections below. Its
 constructor wires up the bounded-trust immutables:
 
 ```solidity
@@ -55,9 +81,8 @@ constructor(
 )
 ```
 
-A concrete navigator must define a `string public constant navigatorType`, emit
-`NavigatorDeployed` in its own constructor, and implement its pricing or tribute logic. Here is
-the minimal shape:
+A concrete navigator must define a `string public constant navigatorType`, emit `NavigatorDeployed` in
+its own constructor, and implement its pricing or tribute logic. Here is the minimal shape:
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -103,8 +128,8 @@ contract MyNavigator is BaseNavigator {
 
 ## The permission bitmask
 
-`DAOShip` grants navigators an additive permission bitmask. Check it with a bitwise AND against
-the address's current grant:
+`DAOShip` grants navigators an additive permission bitmask. Check it with a bitwise AND against the
+address's current grant:
 
 | Bit | Permission | Powers |
 |-----|------------|--------|
@@ -113,8 +138,8 @@ the address's current grant:
 | `4` | `GOVERNOR` | Cancel proposals, set governance config |
 
 Combinations are sums: `3` is ADMIN+MANAGER, `6` is MANAGER+GOVERNOR, `7` is full access. To call
-`mintShares` / `mintLoot` your navigator needs `MANAGER`. In `BaseNavigator`, pause and unpause
-are gated on `GOVERNOR` or the avatar:
+`mintShares` / `mintLoot` your navigator needs `MANAGER`. In `BaseNavigator`, pause and unpause are
+gated on `GOVERNOR` or the avatar:
 
 ```solidity
 function pause() external {
@@ -127,14 +152,109 @@ function pause() external {
 
 <Callout type="danger" title="MANAGER is dilution power">
 A `MANAGER` navigator can mint unbounded shares and loot — directly diluting every member. Always
-bound it with a `mintCap`, a `perAddressCap`, and an `expiry`, keep it immutable, and never grant
-more permission than the navigator needs.
+bound it with a `mintCap`, a `perAddressCap`, and an `expiry`, keep it immutable, and never grant more
+permission than the navigator needs.
 </Callout>
 
-## Governance enables the navigator
+## Beyond MANAGER: the other permissions
 
-A navigator has no power until governance grants it permission. That happens through a passed
-proposal calling `setNavigators`, which is `governanceOnly` — it requires
+MANAGER is the most common bit, but two others exist — and they behave differently.
+
+**GOVERNOR (4)** navigators change governance config or cancel proposals. The shipped
+[Timelock](/docs/navigators/timelock) is the exemplar: a governance proposal calls
+`timelock.queueChange(governanceConfig)` instead of `daoShip.setGovernanceConfig` directly, and the
+change can only be forwarded with `executeChange` after a delay elapses — giving members a second
+ragequit window.
+
+<Callout type="warning" title="A GOVERNOR gate is advisory, not enforced">
+A GOVERNOR navigator cannot make itself mandatory at the contract layer. A governance proposal can
+always call the same `DAOShip` governor function directly via `executeAsGovernance` (which runs the
+inner call as `msg.sender == address(daoShip)`), bypassing your navigator entirely. `lockGovernor()`
+does **not** close that path — governance reaches governor functions through `executeAsGovernance`
+regardless of locks. So design GOVERNOR navigators as **tooling plus on-chain signals** — emit clear
+events the [Indexer](/docs/developers/indexer) can flag (e.g. warn on a proposal that calls
+`setGovernanceConfig` directly on a timelock-enabled DAO) — not as hard on-chain enforcement.
+</Callout>
+
+**ADMIN (1)** navigators pause and unpause token transfers via `setAdminConfig`. This is the planned
+**Circuit Breaker** pattern: monitor on-chain conditions and auto-pause Shares and Loot on anomalies
+(mint spikes, treasury drains), with unpause reserved for human governance.
+
+## Read-only navigators (no permission)
+
+A read-only navigator only **reads** DAO state — it never mutates the DAO, so it needs no permission
+bit and no `ReentrancyGuard` (there are no value transfers). [Signal](/docs/navigators/signal) is the
+exemplar: it reads share-weighted, delegation-aware voting power via
+`daoShip.getPriorVotes(voter, timepoint)` to run non-binding polls. A bug cannot mint, burn, or pause —
+the worst case is a mis-tallied, non-binding poll.
+
+Because it is unpermissioned, **anyone can deploy one pointed at any DAO**. The DAO association in its
+`NavigatorDeployed` event is therefore *self-asserted*. The indexer marks it `self_asserted` and does
+**not** surface its data until the DAO **sanctions** it — a governance action where the DAO's vault
+posts a `daoships.dao.navigators` list naming the navigator address. That post is authenticated
+(`msg.sender == vault`), grants zero permission, and changes only how the navigator is *displayed*, not
+what it can *do*.
+
+The design implication: a read-only navigator must be **deployed after the DAO exists** (it cannot be
+wired up in the launch wizard — the DAO isn't on the indexer yet), and your UI or tooling should drive
+the sanction post from the DAO's Navigators page. See the
+[three trust classes](/docs/navigators/overview#the-three-trust-classes) for how the indexer treats
+each status.
+
+## Module navigators (vault-enabled)
+
+A module navigator takes **no** `DAOShip` permission. Instead it is enabled as a **Zodiac module on the
+Quai Vault** and calls `IAvatar(vault).execTransactionFromModule(to, value, data, operation)` to move
+treasury funds — it never mints. The shipped [Budget](/docs/navigators/budget) navigator is the
+exemplar: governance approves a recurring spend (manager, token, per-period allowance, lifetime
+ceiling) and a delegated manager disburses without a proposal per payment. See
+[the Quai Vault treasury](/docs/concepts/quai-vault-treasury) for how vault custody works.
+
+Endorsement is a governance proposal that calls `enableModule(navigator)` on the vault — there is **no
+`setNavigators`** call. The indexer derives trust from the vault's `EnabledModule` / `DisabledModule`
+events. A deployed-but-not-enabled module navigator is powerless and hidden.
+
+<Callout type="danger" title="A vault module can move funds">
+The vault enforces no per-module limit, so a module navigator's own caps are the treasury's only
+on-chain guarantee. Make it **immutable**, **bounded** (e.g. a per-period allowance plus a lifetime
+ceiling), and have it **mirror the audited treasury-transfer path** (hardcode `Operation.Call` — no
+DelegateCall) rather than inventing its own. A compromised manager is then bounded to its budget; only a
+bug in your contract risks the whole treasury — hence the minimal surface and a treasury-grade audit.
+</Callout>
+
+## Gating membership — IMembershipGate
+
+Not every navigator prices tribute; some gate on a *condition* — owning an NFT, being on a list,
+holding another token. The shipped [NFT-Gate](/docs/navigators/nft-gate) navigator is the reference: it
+onboards holders of an ERC-721 collection and implements `IMembershipGate`, so its eligibility check is
+reusable by other contracts.
+
+```solidity
+interface IMembershipGate {
+    function isEligible(address candidate) external view returns (bool);             // e.g. balanceOf > 0
+    function isEligibleToken(address candidate, uint256 tokenId) external view returns (bool);
+}
+```
+
+Two patterns worth copying from it:
+
+- **Per-token "claim ticket" accounting.** It tracks `claimed[tokenId]`, not claims per address, so
+  moving the NFT to a fresh wallet can't recycle a second claim, and minted Shares persist even after
+  the NFT is sold. Expose `claimed(tokenId)` plus a `canOnboard(candidate, tokenId)` preflight view so
+  frontends can show what's still claimable without sending a transaction.
+- **Treat the gate as untrusted.** It wraps every `ownerOf` / `balanceOf` in `try/catch` and resolves
+  failures to `false`, so a hostile or non-conforming collection can't make onboarding revert or
+  mis-mint. Because the collection may be mintable, its `mintCap` is **mandatory** (a zero cap is
+  rejected in the constructor).
+
+On a successful claim it emits both the generic `Onboard` event and a navigator-specific
+`NFTClaimed(daoShip, holder, tokenId, shares, loot)` — see the [Indexer](/docs/developers/indexer) page
+for how to consume them without double-counting.
+
+## Governance enables a permissioned navigator
+
+A permissioned navigator has no power until governance grants it permission. That happens through a
+passed proposal calling `setNavigators`, which is `governanceOnly` — it requires
 `msg.sender == address(this)`, so it can only execute via the proposal queue:
 
 ```solidity
@@ -143,19 +263,28 @@ function setNavigators(address[] calldata navigators, uint256[] calldata permiss
 ```
 
 `setNavigators` rejects permission bits above `MAX_PERMISSION` (7) and honors any active locks: if
-`lockManager()` has been called, the call reverts with `ManagerLocked` when it tries to grant
-`MANAGER` to a new navigator (the same applies to `lockAdmin` / `lockGovernor`). These locks are
-irreversible.
+`lockManager()` has been called, the call reverts with `ManagerLocked` when it tries to grant `MANAGER`
+to a new navigator (the same applies to `lockAdmin` / `lockGovernor`). These locks are irreversible —
+they freeze the roster but never revoke an existing navigator, and governance can always still call the
+locked functions directly via `executeAsGovernance`.
 
 ## Deploy and enable workflow
 
-1. Deploy your navigator with `_daoShip` set to the target DAO and sensible caps/expiry.
-2. The constructor emits `NavigatorDeployed`; the indexer registers it in `ds_navigators`.
-3. Build `setNavigators([myNavigator], [2])` calldata (MANAGER), wrap it in MultiSend, and submit
-   it as a proposal.
-4. Once the proposal passes and processes, the navigator can mint.
+The deploy step is the same for every class — but **the endorsement step differs by class**:
 
-See `scripts/replace-navigator.ts` in the contracts repo for a complete deploy to proposal
-encoding pattern. For the surrounding system, read [Architecture](/docs/developers/architecture)
-and [Contracts](/docs/developers/contracts); to watch onboard events, see
-[Indexer](/docs/developers/indexer).
+1. Deploy your navigator with `_daoShip` set to the target DAO and sensible caps/expiry/bounds.
+2. The constructor emits `NavigatorDeployed`; the indexer registers it in `ds_navigators` with a
+   `trust_status` (`self_asserted` until endorsed). This is true for **all three classes** — see
+   [Indexer](/docs/developers/indexer).
+3. Endorse it, by class:
+   - **Permissioned** — submit a proposal calling `setNavigators`. For a MANAGER navigator, build
+     `setNavigators([myNavigator], [2])` calldata, wrap it in MultiSend, and submit it.
+   - **Read-only** — submit a proposal that has the vault post a `daoships.dao.navigators` list naming
+     the navigator. Until then its data stays hidden (`self_asserted`).
+   - **Module** — submit a proposal calling `enableModule(myNavigator)` on the Quai Vault.
+4. Once the proposal passes and processes, the navigator becomes `sanctioned` and can act.
+
+See `scripts/replace-navigator.ts` in the contracts repo for a complete deploy-to-proposal encoding
+pattern for the permissioned case. For the surrounding system, read
+[Contracts](/docs/developers/contracts) and the [Navigators overview](/docs/navigators/overview); to
+watch deploy and onboard events, see [Indexer](/docs/developers/indexer).

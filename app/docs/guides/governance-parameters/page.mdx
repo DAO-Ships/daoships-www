@@ -37,6 +37,10 @@ Pick the row that best matches your DAO and start from there. Values come from t
 | `proposalOffering` | `0` | `0.01` QUAI | `0.1` QUAI | `1` QUAI | `0` |
 | `defaultExpiryWindow` | `259200` (3 days) | `604800` (7 days) | `604800` (7 days) | `1209600` (14 days) | `600` (10 min) |
 
+Each template also suggests a few [navigators](/docs/navigators/overview) — for example, an
+[Onboarder](/docs/navigators/onboarder) for open membership or a [Timelock](/docs/navigators/timelock)
+for high-stakes DAOs. The per-template breakdowns on the [use-case pages](/use-cases) spell these out.
+
 A few notes on the extremes:
 
 - **Startup** uses a high `5000` quorum because a small trusted group should reach majority easily.
@@ -64,3 +68,5 @@ If `defaultExpiryWindow` is `0`, passing proposals auto-expire after `2 * (votin
 ## Can I change these later?
 
 Yes. Governance parameters are set at launch but can be changed afterward through a **Governance Config** proposal — meaning the DAO has to vote to change its own rules. Choose carefully up front, but know you're not locked in. See [Create Your First Proposal](/docs/guides/first-proposal).
+
+For DAOs where a sudden rule change is itself a risk, add a [Timelock navigator](/docs/navigators/timelock): it puts a mandatory delay between approving a config change and applying it, opening a second [ragequit](/docs/concepts/ragequit) window for anyone who objects.

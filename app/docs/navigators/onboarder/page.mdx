@@ -1,0 +1,129 @@
+export const metadata = {
+  title: "Onboarder Navigator",
+  description:
+    "The Onboarder Navigator turns native QUAI tribute into self-delegating Shares and/or Loot, minted atomically in one transaction. Reference for its pricing modes, caps, allowlist, events, and indexer data.",
+};
+
+# Onboarder Navigator
+
+The Onboarder is the most common way a ship admits new crew. A prospective member sends native QUAI to
+the navigator; in the same transaction it mints Shares and/or Loot to the sender and forwards the
+tribute straight to the treasury — no per-applicant governance proposal required. It is the instant,
+permissionless, capped alternative to admitting members one vote at a time. For the trust framing that
+governs every minting navigator, see the [Navigators overview](/docs/navigators/overview).
+
+<Callout type="info" title="The one-sentence version">
+Pay native QUAI, mint your own membership now — the Onboarder holds the MANAGER permission and gates it
+behind an immutable pricing rule, so anyone can join without a proposal.
+</Callout>
+
+**Class:** Permissioned · **Permission:** MANAGER (`2`). It is endorsed through a governance
+`setNavigators` proposal and can be added in the launch wizard **or** post-launch from the DAO's
+Navigators page.
+
+## How it works
+
+A contributor calls `onboard()` (or sends QUAI with no calldata — see below). The navigator computes how
+much to mint from its pricing rule, mints the Shares/Loot to `msg.sender`, and forwards the tribute to
+`daoShip.avatar()`. Everything happens atomically: if the tribute forward fails, the mints roll back, so
+the DAO never receives a mint without the matching tribute. Newly minted Shares **self-delegate**, so
+the new member's voting power is live immediately.
+
+The navigator never custodies the DAO's tribute — `cost` goes straight to the vault. The only native
+value that can land on the navigator is a failed fixed-price refund remainder, which governance recovers
+with `withdrawStuckETH` (avatar-only).
+
+### Two pricing modes (immutable, chosen at deploy)
+
+The constructor enforces **exactly one** mode and reverts `InvalidConfig` if neither or both are
+configured. The mode is fixed for the navigator's lifetime — to change pricing you deploy a new instance
+and re-register it.
+
+- **Multiplier mode** — Shares/Loot = `tribute × multiplier`, where the multiplier is in basis points
+  (`10000` = 1×). The entire `msg.value` is forwarded; there is **no refund**.
+- **Fixed-price mode** — a set price per unit. Payment is divided into whole units; the per-unit
+  remainder is **refunded** to the sender.
+
+```solidity
+// multiplier mode
+sharesToMint = (msg.value * shareMultiplier) / 10000;
+lootToMint   = (msg.value * lootMultiplier)  / 10000;
+
+// fixed-price mode
+uint256 units = msg.value / pricePerUnit;
+cost      = units * pricePerUnit;   // forwarded to vault
+remainder = msg.value - cost;       // refunded to msg.sender
+```
+
+### Plain QUAI sends onboard too
+
+A plain native-token send with no calldata hits `receive()`, which delegates to the same onboarding
+logic with an **empty proof** — so ordinary "send to address" UX onboards a member identically to an
+explicit `onboard()` call. `receive()` is marked `nonReentrant` (an audit fix). If an allowlist is set,
+`receive()` reverts `NotAllowlisted` because a plain transfer cannot carry a Merkle proof — allowlisted
+DAOs must route through `onboard(bytes32[])`.
+
+## Configuration
+
+Pricing is set per mode; the rest are `BaseNavigator` bounds, all optional.
+
+| Parameter | Meaning | Notes |
+| --- | --- | --- |
+| `shareMultiplier` / `lootMultiplier` | Multiplier-mode rate, in basis points | `10000` = 1×; `0` in fixed-price mode |
+| `pricePerUnit` | Fixed-price price per unit (wei) | `0` selects multiplier mode |
+| `sharesPerUnit` / `lootPerUnit` | Shares/Loot minted per paid unit | Fixed-price mode; at least one must be non-zero |
+| `minTribute` | Multiplier-mode anti-spam floor (wei) | In fixed-price mode the floor is `pricePerUnit` |
+| `mintCap` | Total Shares + Loot this navigator may ever mint | **Navigator-LOCAL, not DAO-global**; `0` = unlimited |
+| `perAddressCap` | Max Shares + Loot per wallet | Keyed to `msg.sender`; `0` = unlimited |
+| `allowlistRoot` | Optional Merkle allowlist root | Double-hashed OZ standard leaves; `bytes32(0)` = open |
+| `expiry` | Unix timestamp after which onboarding stops | `0` = no expiry |
+| pause / unpause | Halt or resume onboarding | Callable by the GOVERNOR navigator **or** the vault/avatar |
+
+<Callout type="warning" title="Two gotchas that bite at configuration time">
+**Multiplier-mode dust reverts even above `minTribute`.** Because amounts truncate on the `/ 10000`
+division, a payment that clears `minTribute` but mints zero is rejected by the anti-dust guard
+(`InsufficientTribute`) — set `minTribute` against the multiplier scale. And **`mintCap` is
+navigator-LOCAL**: two Onboarders on the same DAO each have their own cap, and the DAO's true dilution
+ceiling is the sum across every minting path. Size grants against current supply.
+</Callout>
+
+<Callout type="danger" title="Pausing the token does not stop onboarding">
+Onboarding mints through the DAO's MANAGER path, not the token's pause. To halt onboarding, call the
+navigator's own `pause()` (GOVERNOR navigator or avatar) — it blocks `onboard()`, `onboard(bytes32[])`,
+and `receive()`. Revoking the navigator's MANAGER bit is the harder kill switch: every onboard then
+reverts cleanly at the mint call.
+</Callout>
+
+## Add it
+
+The Onboarder is a permissioned navigator, so it is endorsed (and revoked) through a `setNavigators`
+proposal granting it MANAGER (`2`). You can add it during launch in the wizard, or post-launch from the
+DAO's Navigators page. The [Use navigators](/docs/guides/use-navigators) guide walks the endorsement
+flow step by step.
+
+## Events &amp; indexer data
+
+| Event | Fields | Use |
+| --- | --- | --- |
+| `Onboard` | `daoShipAddress`, `contributor`, `amount`, `shares`, `loot` | The onboarding-activity feed. `amount` is `cost` (tribute forwarded to the vault), **not** gross `msg.value` |
+| `StuckETHRecovered` | `to`, `amount` | Emitted on governance recovery of a failed refund |
+| `Paused` / `Unpaused` | `caller` | Onboarding halted / resumed |
+
+Custom errors include `InsufficientTribute` (below floor or mints zero), `TransferFailed` (tribute
+forward or stuck-ETH send failed), and `RefundFailed` (fixed-price remainder refund failed).
+
+The navigator is registered in `ds_navigators`, and each onboarding writes a row to
+`ds_navigator_events` with `event_type` `'onboard'`. **Member balances come from the paired token
+`Transfer` event, not the `Onboard` amount** — treat `Onboard` as the activity feed and don't
+double-count. See the [indexer reference](/docs/developers/indexer) for the table shapes.
+
+The contract carries **no Critical, High, or Medium** audit findings.
+
+## Related
+
+- [Navigators — overview &amp; catalog](/docs/navigators/overview) — the trust classes and permission model
+- [Navigators concept](/docs/concepts/navigators) — the conceptual primer
+- [Shares vs. Loot](/docs/concepts/shares-vs-loot) — what the Onboarder mints
+- [Use navigators](/docs/guides/use-navigators) — add, sanction, and enable each class
+- [Build a Navigator](/docs/developers/build-a-navigator) — write your own
+- [Indexer &amp; data layer](/docs/developers/indexer) — the tables that back this navigator

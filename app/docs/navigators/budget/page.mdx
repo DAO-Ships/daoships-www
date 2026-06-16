@@ -1,0 +1,144 @@
+export const metadata = {
+  title: "Budget Navigator",
+  description:
+    "The Budget Navigator lets governance approve a recurring treasury budget once, then a designated manager disburses within a per-period allowance and a lifetime ceiling — no proposal per payment. It is a vault module, not a DAOShip permission.",
+};
+
+# Budget Navigator
+
+The Budget Navigator is how a ship pays recurring costs — contributor stipends, payroll, grant
+tranches — without a governance vote for every single payment. Governance approves the budget once;
+a designated **manager** then disburses within it, bounded by caps the contract enforces on chain.
+
+<Callout type="info" title="The one-sentence version">
+Governance approves a recurring spending budget against the treasury once; a manager pays out within
+a per-period allowance and a lifetime ceiling, with zero proposals per payment.
+</Callout>
+
+## Class: Module
+
+Budget is the only navigator in the **module** trust class. It takes **no `DAOShip` permission bit**
+— it holds neither ADMIN, MANAGER, nor GOVERNOR. Its entire authority comes from being enabled as a
+**module on the Quai Vault**, exactly like any other Zodiac module. This is the single most important
+distinction from every other navigator: Budget is wired to the **treasury**, not to `setNavigators`.
+
+<Callout type="warning" title="Budget is wired to the vault, not to the DAOShip">
+Every other navigator earns its authority through a permission bit set by a Navigators proposal.
+Budget does not. It is enabled with the Zodiac `enableModule` call on the [Quai
+Vault](/docs/concepts/quai-vault-treasury), and that module grant is its only privilege. There is no
+`setNavigators` step for a Budget navigator.
+</Callout>
+
+It **never mints tokens** — it only moves treasury funds, mirroring the exact same audited transfer
+path used by [ragequit](/docs/concepts/ragequit). Treasury assets stay in vault custody (so ragequit
+still reaches whatever remains) until the moment of payout.
+
+## How budgets work
+
+A budget is a delegated, capped spending allowance over the treasury. Each budget carries:
+
+| Field | Meaning |
+| --- | --- |
+| `manager` | The address authorized to disburse this budget. Mutable by governance. |
+| `token` | The asset paid out. Native QUAI when the token is the zero address, or any ERC-20. One token per budget. |
+| `allowancePerPeriod` | The maximum disbursable within a single period. Must be `> 0`. |
+| `periodLength` | The length of a period, between `MIN_PERIOD` (1 hour) and `MAX_PERIOD` (3650 days). |
+| `totalCeiling` | A lifetime hard cap on total disbursed across all periods. Must be `> 0`, immutable. |
+| `startTime` / `endTime` | Optional window. `startTime == 0` means "now"; `endTime == 0` means perpetual. |
+
+**The per-period allowance resets lazily** — there is no keeper or cron. On each spend, if the
+current period has elapsed, the contract advances whole periods and zeroes the spent counter, then
+applies the allowance fresh. Unused allowance does **not** roll over: `0.15` per period means at most
+`0.15` in any one period, never a saved-up `0.30`.
+
+**The lifetime ceiling** is a hard cap on total disbursed across the entire life of the budget. A
+budget is exhausted forever once total spent reaches `totalCeiling` — and the ceiling can bind
+tighter than the per-period allowance.
+
+## The two disbursement rails
+
+Both rails are **manager-only** and both enforce the same caps:
+
+| Rail | Use | Atomicity |
+| --- | --- | --- |
+| `disburse(budgetId, to, amount)` | A single recipient | One transfer |
+| `disburseBatch(budgetId, to[], amounts[])` | Payroll to many recipients | All-or-nothing — the whole batch reverts if any line fails |
+
+`createBudget`, `updateManager` (governance can swap the manager at any time), and `cancelBudget`
+(irreversible — it halts future disbursement but does not claw back funds already paid) round out the
+governance surface.
+
+## The trust flow: enable as a module
+
+Because Budget's authority is vault-module status, a deployed-but-not-enabled Budget navigator is
+`self_asserted` and completely powerless — it cannot move a single token, the indexer materializes
+**nothing** for it, and the app hides it.
+
+It becomes `sanctioned` and active only when the vault emits `EnabledModule` for it — which happens
+when a governance proposal calls `enableModule` on the vault. Disabling the module (`disableModule`)
+flips it back to `unsanctioned` and inactive. Budget data is materialized **only** for sanctioned
+navigators, and the indexer backfills the budget's history the moment the module is enabled.
+
+<Callout type="tip" title="Budget may be deployed at launch — but still enabled afterward">
+Unlike Signal, a Budget navigator **may** be deployed against a predicted DAO address during launch
+(the indexer keeps it rather than dropping it). But deploying is not enabling: it still must be
+enabled on the vault after launch, via a governance proposal calling `enableModule`. Until then it
+moves no funds and is invisible.
+</Callout>
+
+## Pause and cancel
+
+**Pause freezes ALL disbursement**, not just budget creation — it is the emergency treasury brake.
+It is callable by a GOVERNOR navigator or by the avatar, and it does not touch funds already
+disbursed. `cancelBudget` is the surgical, per-budget stop; disabling the module on the vault is the
+nuclear option.
+
+## Add it
+
+Wiring a Budget navigator is two governance steps (both batchable into one proposal):
+
+1. **Enable as a vault module** — a proposal whose batch calls `vault.enableModule(budgetNav)`. There
+   is **no `setNavigators`** step; Budget holds no DAOShip permission.
+2. **Create budgets** — proposals calling `createBudget(manager, token, allowancePerPeriod,
+   totalCeiling, periodLength, startTime, endTime)`. Managers then disburse within caps with zero
+   further proposals.
+
+The [Use navigators](/docs/guides/use-navigators) guide walks through the enable flow step-by-step.
+
+## Events &amp; indexer data
+
+The contract emits these events; the [indexer](/docs/developers/indexer) watches them, plus the
+vault's `EnabledModule` / `DisabledModule` for the trust signal.
+
+| Event | When it fires |
+| --- | --- |
+| `BudgetCreated` | A new budget is approved by governance |
+| `Disbursed` | One per recipient — `disburse` emits one, `disburseBatch` emits N |
+| `ManagerUpdated` | Governance swaps a budget's manager |
+| `BudgetCancelled` | A budget is irreversibly cancelled |
+| `Paused` / `Unpaused` | All disbursement is frozen or resumed |
+| `EnabledModule` / `DisabledModule` | The vault enables or disables this navigator — the trust signal |
+
+The indexer materializes three tables for a sanctioned Budget navigator:
+
+| Table | What it holds |
+| --- | --- |
+| `ds_budgets` | One row per budget. Its `total_spent` is the **SUM** of disbursements (derive-from-truth, never `+=`); status is time-derived. |
+| `ds_budget_disbursements` | One row per recipient — the activity feed. Take the actual amount from the paired vault `Transfer`; never double-count. |
+| `ds_vault_module_events` | The enable/disable feed that derives the navigator's trust state. |
+
+Live `remainingThisPeriod` and `remainingTotal` are best read straight from the contract's view
+functions, which apply the lazy period reset; a stored `spent_this_period` can be stale between
+disbursements.
+
+<Callout type="info" title="Audit status">
+The Budget Navigator has no open Critical, High, or Medium audit findings.
+</Callout>
+
+## Related
+
+- [Navigators — Overview &amp; Catalog](/docs/navigators/overview) — the trust classes and the full roster
+- [Quai Vault &amp; treasury](/docs/concepts/quai-vault-treasury) — where module authority lives
+- [Ragequit](/docs/concepts/ragequit) — the audited transfer path Budget mirrors
+- [Use navigators](/docs/guides/use-navigators) — enable and operate each class
+- [Indexer &amp; data layer](/docs/developers/indexer) — the tables that back this navigator

@@ -1,0 +1,148 @@
+export const metadata = {
+  title: "Timelock Navigator — A Delay on Governance-Config Changes",
+  description:
+    "The Timelock navigator imposes a mandatory delay on governance-parameter changes, opening a second ragequit window before a passed change takes effect. The delay is enforced by the app and the indexer socially — a proposal can still bypass it on-chain, and any bypass is flagged and visible.",
+};
+
+# Timelock Navigator
+
+The **Timelock** navigator wraps `setGovernanceConfig` behind a mandatory delay. Instead of a passed
+proposal applying a governance-parameter change immediately, the change is **queued** here and becomes
+executable only after the delay elapses — giving members who dislike the change a chance to exit
+first. It is a [permissioned navigator](/docs/navigators/overview) holding the GOVERNOR bit.
+
+<Callout type="info" title="One-sentence version">
+A passed config change is queued, not applied; it can only execute after a delay, and that delay is a
+second ragequit window for members who disagree.
+</Callout>
+
+**Class:** Permissioned · **Permission:** GOVERNOR (`4`). Endorsed through a `setNavigators`
+governance proposal, post-launch. Unlike MANAGER navigators it needs governor powers because
+`setGovernanceConfig` is `onlyGovernor`.
+
+## How the delay works — a second ragequit window
+
+A normal proposal grants its own exit window: the [grace period](/docs/concepts/quorum-grace-retention)
+after a vote passes, during which members can [ragequit](/docs/concepts/ragequit) before anything
+executes. The Timelock adds a **second** window, specific to governance-parameter changes:
+
+```
+votingPeriod → gracePeriod → proposal processed (calls queueChange)
+  → delay (second ragequit window) → executeChange
+```
+
+When a config-change proposal processes, it calls `queueChange` instead of applying the change. The
+change then sits as **queued** until the delay elapses, becomes **executable**, and stays executable
+only until an immutable `expiryWindow` lapses — after which it **expires** harmlessly. A queued change
+can also be **cancelled**.
+
+Storage is gas-light: only `keccak256(governanceConfig)` is stored on-chain. The **full config bytes
+are emitted in the `ChangeQueued` event**, and must be supplied verbatim to `executeChange`. The
+indexer persists them so a frontend can show a countdown and let anyone replay them at execution.
+
+## Parameters
+
+| Parameter | Bound | Notes |
+| --- | --- | --- |
+| `delay` minimum | **10 minutes** | A sanity floor only — guarantees a queued change is observable, **not** that members have time to react. |
+| `delay` recommended | **2 days** | Advisory production minimum (**not enforced**). The deploy script warns when `delay` is below it. For a real exit window the delay should be sized in days and longer than `gracePeriod`. |
+| `delay` maximum | **30 days** | Hard ceiling. |
+| `expiryWindow` | immutable | After the window lapses, a matured-but-unexecuted change becomes unexecutable. Size it to comfortably exceed your operational latency so a change is not missed. |
+
+Each navigator is bound to one `DAOShip` clone and is immutable — to change the delay or expiry,
+deploy a new instance and re-register it. See [Governance parameters](/docs/guides/governance-parameters).
+
+## The change lifecycle
+
+| Status | Derived how | Meaning |
+| --- | --- | --- |
+| `queued` | stored | Change is recorded but the delay has not elapsed. |
+| `executable` | time-derived | The delay has elapsed and the expiry window has not — anyone can execute it now. |
+| `executed` | stored | The change was applied to the DAO. |
+| `expired` | time-derived | The expiry window lapsed before execution; the change can no longer execute. |
+| `cancelled` | stored | The vault/avatar cancelled the change before it executed. |
+
+**Permissionless execution.** Once a change is executable, **anyone** can call
+`executeChange(changeId, governanceConfig)` — no keeper or privileged caller is required. The change
+was already authorized by the avatar at queue time; the only thing a caller controls is *when* within
+the window it lands.
+
+**Cancellation.** The vault/avatar can cancel a pending change. `emergencyCancelAll` — which cancels
+every pending change and pauses queueing — can be called by the avatar or a GOVERNOR.
+
+**Pause** blocks **new** `queueChange` calls only. It does **not** block `executeChange`, so an
+already-queued, valid change never gets stuck behind a pause.
+
+A malformed queued config cannot lock anything: the navigator never decodes it, and `DAOShip`
+validates it at execution time, so a bad config simply expires harmlessly.
+
+<Callout type="danger" title="Advisory, not enforced on-chain — read this">
+The Timelock **cannot** be made mandatory at the contract layer. A governance proposal can always
+bypass it by calling `setGovernanceConfig` directly via `executeAsGovernance`, which runs as the DAO
+itself and is accepted by `onlyGovernor`. Calling `lockGovernor()` does **not** close this path.
+Enforcement is therefore **social plus tooling**: the app routes all config changes through
+`queueChange` for timelock-enabled DAOs, and the indexer flags any direct change. Treat the guarantee
+as "the app enforces the delay; bypasses are flagged and visible" — **not** "changes are guaranteed
+to go through the timelock."
+</Callout>
+
+## How the app and indexer enforce it socially
+
+Because the delay is advisory, enforcement lives off-chain:
+
+- **The app** routes every governance-config change through `queueChange` for timelock-enabled DAOs,
+  and surfaces a countdown to `executable` so members can watch the second ragequit window.
+- **The indexer** detects bypasses. A legitimate timelocked change emits the Timelock's
+  `ChangeExecuted` in the **same transaction** as the DAO's config change. When a config change lands
+  on a timelock-enabled DAO **without** a paired execution, the indexer marks it as a bypass.
+- **The app warns** on any proposal whose config change was flagged as a bypass, so members can see
+  that the delay was skipped while a Timelock was active.
+
+<Callout type="warning" title="The Timelock must stay the only GOVERNOR navigator">
+The "a navigator can only queue, never apply instantly" guarantee assumes the Timelock is the **sole**
+GOVERNOR navigator. If a second GOVERNOR navigator is ever granted, it could reach `setGovernanceConfig`
+directly. Treat "Timelock is the only GOVERNOR navigator" as an operational invariant.
+</Callout>
+
+## Add it
+
+The Timelock is permissioned, so endorse it through a **Navigators proposal** after launch:
+
+1. Deploy a Timelock instance bound to your `DAOShip`, with a `delay` (use at least the recommended 2
+   days) and an `expiryWindow`.
+2. Pass a governance proposal calling `setNavigators` to grant it GOVERNOR (`4`). It must be the only
+   GOVERNOR navigator.
+3. Route all subsequent governance-config changes through `queueChange` — the app does this
+   automatically for timelock-enabled DAOs.
+
+The [Use navigators](/docs/guides/use-navigators) guide walks the endorsement flow step-by-step.
+
+## Events &amp; indexer data
+
+| Event | Carries | Indexer effect |
+| --- | --- | --- |
+| `ChangeQueued` | `changeId`, `queuedBy`, `configHash`, **full `governanceConfig` bytes**, `executableAfter`, `expiresAt` | Upserts a `ds_timelock_changes` row with the full config bytes — the only place they exist on-chain. |
+| `ChangeExecuted` | `changeId`, `executor`, `configHash` | Marks the row `executed`; the recorded execution tx powers bypass detection. |
+| `ChangeCancelled` | `changeId`, `caller` | Marks the row `cancelled`. |
+| `Paused` / `Unpaused` | `caller` | Reflects the queueing pause state. |
+
+Two tables back the navigator (see [Indexer &amp; data layer](/docs/developers/indexer)):
+
+- **`ds_timelock_changes`** — one row per queued change, including its full `governance_config` bytes,
+  so a frontend can show a countdown to `executable` and let anyone execute it.
+- **`ds_governance_config_history`** — an audit feed of every config change with a `bypassed_timelock`
+  boolean. `true` means a change was applied directly while a Timelock was active, skipping the delay.
+  The app should warn on any proposal carrying that flag.
+
+The contract carries no Critical, High, or Medium audit findings; the advisory nature is by design and
+documented.
+
+## Related
+
+- [Navigators — Overview &amp; Catalog](/docs/navigators/overview) — permission model and trust classes
+- [Ragequit](/docs/concepts/ragequit) — the exit the delay reopens
+- [Quorum, grace &amp; retention](/docs/concepts/quorum-grace-retention) — the proposal's own exit window
+- [Proposal lifecycle](/docs/concepts/proposal-lifecycle) — where `queueChange` slots in
+- [Governance parameters](/docs/guides/governance-parameters) — what the queued config controls
+- [Use navigators](/docs/guides/use-navigators) — endorse and route through the Timelock
+- [Indexer &amp; data layer](/docs/developers/indexer) — the tables that back this navigator

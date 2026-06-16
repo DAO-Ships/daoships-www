@@ -1,0 +1,161 @@
+export const metadata = {
+  title: "NFT-Gate Navigator — ERC-721 Membership Claims",
+  description:
+    "The NFT-Gate Navigator lets holders of a specific ERC-721 collection claim membership in a DAO Ships ship. Claims are tracked per token ID — one claim per token, forever — with optional native tribute, allowlist, expiry, and a mandatory mint cap.",
+};
+
+# NFT-Gate Navigator
+
+The **NFT-Gate Navigator** gates DAO membership behind ownership of a specific **ERC-721**
+collection. A holder calls `onboard(tokenId)`, the navigator verifies they own that token, and mints
+a fixed amount of Shares and/or Loot. Use it to admit an existing NFT community into a ship without
+running a tribute sale or a manual allowlist drop.
+
+<Callout type="info" title="The one-sentence version">
+Prove you hold an unclaimed token from the gating ERC-721 collection, optionally pay an exact native
+tribute, and the navigator mints you a fixed bundle of Shares and Loot — once per token, ever.
+</Callout>
+
+This is a **Permissioned** navigator and needs the **MANAGER** role (`2`) to mint. It is endorsed by a
+governance [`setNavigators`](/docs/guides/use-navigators) proposal and is offered **post-launch only** —
+it is not part of the launch wizard, so you deploy and register it from the DAO's Navigators page. For
+where it sits in the catalog, see [Navigators — Overview](/docs/navigators/overview).
+
+<Callout type="warning" title="ERC-721 only — no ERC-1155">
+This navigator supports ERC-721 collections exclusively. ERC-1155 gating is a separate, planned
+navigator: its native idiom is amount-based (`balanceOf(account, id) >= N`), and fungibility cannot be
+reliably detected on-chain, so a fungible 1155 gate would be unsafe. A 1155 token passed here simply
+reverts with `NotHolder`.
+</Callout>
+
+## The claim-ticket model
+
+Claims are tracked **per token ID** (`claimed[tokenId]`), not per wallet. Each token can be spent
+exactly once, forever. This defeats transfer-and-reclaim recycling: moving the NFT to a fresh wallet
+never unlocks a second claim, because it is the *token* that is spent, not the address.
+
+The minted Shares behave like a **claim ticket**, not revocable membership:
+
+- Once minted, the Shares and Loot stay with whoever claimed them — even after the NFT is sold.
+- The buyer of an already-claimed token receives **nothing**: the token is spent.
+- This is **not** "lose the NFT, lose the vote." That model is not enforceable for an arbitrary
+  external collection and is reserved for a future escrow-based navigator.
+
+<Callout type="warning" title="Frontends must surface claim status">
+Because a claimed token confers no further benefit, your UI must check `claimed[tokenId]` (or the
+indexer's `isNftClaimed`) before prompting a user to onboard. A buyer who acquires an already-claimed
+token and calls `onboard` will revert with `AlreadyClaimed` — show them that state up front.
+</Callout>
+
+## Configuration
+
+The navigator is configured once at deploy and is immutable; change settings by deploying a new
+instance and re-registering it.
+
+| Parameter | Type | Notes |
+| --- | --- | --- |
+| `gateToken` | `address` | The ERC-721 collection to gate on. Must be a deployed contract. |
+| `sharesPerHolder` | `uint256` | Shares minted per claim (`0` to mint only Loot). |
+| `lootPerHolder` | `uint256` | Loot minted per claim (`0` to mint only Shares). |
+| `requireTribute` | `bool` | `false` = free-mint; `true` = exact native tribute required. |
+| `tributeAmount` | `uint256` | Wei. Must be `0` when `requireTribute` is `false`, `> 0` when `true`. Forwarded to the treasury/vault. |
+| `expiry` | `uint256` | Unix timestamp after which onboarding stops. `0` = no expiry. |
+| `mintCap` | `uint256` | **Mandatory, `> 0`.** Total Shares + Loot this navigator may ever mint. |
+| `perAddressCap` | `uint256` | Per-**wallet** cap on minted Shares + Loot. `0` = unlimited. |
+| `allowlistRoot` | `bytes32` | Optional Merkle root layered on top of the gate. `bytes32(0)` = none. |
+
+The constructor reverts (`InvalidConfig`) on a zero `daoShip`, a `gateToken` with no code, both
+share and loot amounts zero, a tribute flag/amount mismatch (either direction), a **zero `mintCap`**,
+or a cap smaller than a single claim.
+
+<Callout type="warning" title="Why the mint cap is mandatory">
+The gating collection is **outside the DAO's control** and may be mintable — a holder could mint more
+tokens and claim more Shares. The `mintCap` is the dilution backstop, bounding this navigator's total
+issuance; the constructor refuses a zero cap. If the collection is mintable, size the cap against the
+*maximum* plausible claimable supply, not today's supply. Note `perAddressCap` is per **wallet**, so
+it is a sanity bound, not an anti-whale guarantee — a holder of N tokens can claim from N wallets.
+</Callout>
+
+Two onboarding modes:
+
+- **Free-mint** — `requireTribute = false`, `tributeAmount = 0`. Holders claim at no cost.
+- **Tribute** — `requireTribute = true`, `tributeAmount > 0`. The caller must send the **exact**
+  amount; it is forwarded to the treasury/vault atomically (a rejected forward reverts the whole
+  claim).
+
+An optional Merkle **allowlist** composes on top of the gate: when set, a claimer must own an
+unclaimed token **and** be on the allowlist. The navigator also supports **expiry** and **pause**
+(callable by a GOVERNOR navigator or the avatar).
+
+<Callout type="danger" title="Free-mint voids the retention-veto cost assumption">
+Free minting lets a holder of a mintable collection add Shares at **zero cost** while a proposal is
+live, diluting any `minRetentionPercent` ragequit veto (see
+[Ragequit](/docs/concepts/ragequit)). This is a documented operational caveat, **not** a contract
+vulnerability — quorum and mid-proposal voting power are unaffected. If your DAO relies on the
+retention veto, prefer **tribute mode**, gate on a **fixed-supply** collection you control, and/or
+**pause** the navigator during contentious votes.
+</Callout>
+
+## Eligibility and the `canOnboard` preflight
+
+Two stateless helpers report eligibility independent of claim status:
+
+| Helper | Returns true when |
+| --- | --- |
+| `isEligible(address)` | The address holds at least one token (`balanceOf > 0`). |
+| `isEligibleToken(address, tokenId)` | The address owns that specific token (`ownerOf == address`). |
+
+Both wrap their `ownerOf` / `balanceOf` calls in `try/catch`, so a hostile or broken collection cannot
+brick onboarding — views never revert.
+
+For a full preflight (eligibility + claim status + pause + expiry, but **not** tribute or caps),
+`canOnboard` has **two overloads**:
+
+- `canOnboard(member, tokenId)` returns `false` whenever an allowlist is set — it cannot verify
+  membership without a proof.
+- `canOnboard(member, tokenId, proof)` verifies the allowlist with the supplied proof.
+
+<Callout type="info" title="Use the 3-argument form on allowlisted deployments">
+If `allowlistRoot` is set, the UI must call `canOnboard(member, tokenId, proof)`. The 2-argument form
+will always report the user as ineligible, even when they are allowlisted.
+</Callout>
+
+## Add it
+
+1. Deploy the navigator pointed at your ship and `gateToken`, with a non-zero `mintCap`.
+2. Open a governance **Navigators** (`setNavigators`) proposal granting it **MANAGER** (`2`).
+3. When the proposal processes, holders can call `onboard(tokenId)` (or the proof overload). The
+   navigator is bound to one ship and immutable — re-deploy to change config.
+
+See [Use navigators](/docs/guides/use-navigators) for the full endorsement flow.
+
+## Events &amp; indexer data
+
+Both `Onboard` and `NFTClaimed` fire on **every successful claim** — they are distinct signatures, so
+an indexer must **not** sum both into balances.
+
+| Event | Fields | Purpose |
+| --- | --- | --- |
+| `Onboard` | `(daoShipAddress, contributor, amount, shares, loot)` | Generic onboarding feed. `amount` is the native tribute (`0` in free-mint mode). |
+| `NFTClaimed` | `(daoShipAddress, holder, tokenId, shares, loot)` | Adds the per-token dimension — records the spent `tokenId`. |
+| `Paused` / `Unpaused` | `(caller)` | Navigator pause state. |
+
+Errors you may surface: `NotHolder`, `AlreadyClaimed`, `IncorrectTribute`, `NoTributeRequired`,
+`TransferFailed` (plus inherited `IsPaused`, `Expired`, `MintCapExceeded`, `PerAddressCapExceeded`,
+`NotAllowlisted`).
+
+The [indexer](/docs/developers/indexer) records per-token provenance in `ds_nft_claims` (its `holder`
+field is the **original claimer** — the token may move later) alongside a generic `ds_navigator_events`
+row. A frontend can check `isNftClaimed(navigatorAddress, tokenId)` in O(1) to avoid an on-chain call.
+
+The contract carries a clean audit: no Critical, High, or Medium findings. The free-mint / retention-veto
+interaction above is a documented operational caveat, not a vulnerability.
+
+## Related
+
+- [Navigators — Overview &amp; Catalog](/docs/navigators/overview) — the permission model and trust classes
+- [Shares vs. Loot](/docs/concepts/shares-vs-loot) — what a claim actually mints
+- [Ragequit](/docs/concepts/ragequit) — why the free-mint caveat matters for the retention veto
+- [Quorum, grace &amp; retention](/docs/concepts/quorum-grace-retention) — the governance bounds onboarding can affect
+- [Use navigators](/docs/guides/use-navigators) — add and endorse this navigator
+- [Indexer &amp; data layer](/docs/developers/indexer) — the `ds_nft_claims` table behind claim status

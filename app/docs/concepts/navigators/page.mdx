@@ -37,28 +37,42 @@ The maximum valid value is `7`; anything higher is rejected. Granting or changin
 permissions is a **governance-only** action — it always requires a passed proposal, never a single
 party's say-so.
 
-## The three shipped navigators
+## Not every navigator takes a permission
 
-Three Navigators ship ready to use. All three need only the MANAGER role (`2`) to do their job.
+The bitmask above covers *permissioned* navigators — the ones that mint, pause, or change config. But
+two of the shipped navigators sit outside it entirely, and how a navigator is **endorsed** depends on
+which of three classes it belongs to:
 
-### Onboarder Navigator
+| Class | Authority comes from | Endorsed by |
+| --- | --- | --- |
+| **Permissioned** | A `DAOShip` permission bit (above) | A governance `setNavigators` proposal |
+| **Read-only** | Nothing — it never mutates the DAO | The DAO posting that it endorses it |
+| **Module** | Quai Vault module status (Zodiac) | Governance enabling it on the vault |
 
-Turns **native QUAI into Shares or Loot**. A prospective member sends QUAI and receives membership
-tokens in return. It supports two pricing modes — a *multiplier* (tokens per QUAI, in basis points) or
-a *fixed price* with change refunded — plus a Merkle allowlist, a mint cap, a per-address cap, and an
-expiry. This is the most common way a ship admits new crew.
+A read-only navigator (the [Signal](/docs/navigators/signal) poll engine) only *reads* voting power,
+so it needs no permission — instead a DAO vouches for it with a vault post. A module navigator (the
+[Budget](/docs/navigators/budget) disburser) spends the treasury, so it's enabled on the vault like
+any other module, not granted a `DAOShip` role. Until a read-only or module navigator is endorsed, the
+app treats it as unverified and hides its data. The
+[Navigators overview](/docs/navigators/overview#the-three-trust-classes) covers this in full.
 
-### ERC20 Tribute Navigator
+## The navigator catalog
 
-The same idea, but for **ERC-20 tokens** — for example, accepting a stablecoin as tribute in exchange
-for membership. It uses safe transfer handling, **rejects fee-on-transfer tokens**, supports
-per-token pricing, and even allows single-transaction onboarding via permit signatures.
+Eight navigators ship today, all audited and supported end-to-end. Each has its own reference page:
 
-### NFT-gated Navigator
+| Navigator | Class · Permission | What it does |
+| --- | --- | --- |
+| [Onboarder](/docs/navigators/onboarder) | Permissioned · MANAGER | Native QUAI tribute → Shares / Loot |
+| [ERC-20 Tribute](/docs/navigators/erc20-tribute) | Permissioned · MANAGER | ERC-20 tribute → Shares / Loot, with permit |
+| [NFT-Gate](/docs/navigators/nft-gate) | Permissioned · MANAGER | ERC-721 holders claim membership (one claim per token) |
+| [Signal](/docs/navigators/signal) | Read-only · none | Non-binding, share-weighted polls |
+| [Timelock](/docs/navigators/timelock) | Permissioned · GOVERNOR | A mandatory delay on governance-config changes |
+| [Vesting](/docs/navigators/vesting) | Permissioned · MANAGER | Cliff + linear vesting of Shares or Loot |
+| [Budget](/docs/navigators/budget) | Module · vault | Recurring treasury disbursement, no per-payment votes |
+| [Subscription](/docs/navigators/subscription) | Permissioned · MANAGER | Recurring dues with keeper collection |
 
-Mints membership to **holders of a specific ERC-721 collection**. Useful for gating a DAO on an
-existing community NFT. A mint cap is *mandatory* here (the contract refuses a zero cap), and claims
-are tracked per token ID — one NFT, one claim, forever.
+More are designed but not yet shipped (Delegate Registry, Circuit Breaker, Oracle, ERC-1155 Gate) —
+see the [overview](/docs/navigators/overview#planned-navigators).
 
 ## The trust model — read this carefully
 
@@ -78,8 +92,8 @@ When evaluating any Navigator before granting it MANAGER, confirm it has at leas
 - An **expiry** after which minting stops, or
 - **Bounded per-call minting** (a fixed amount per unit of tribute).
 
-The shipped Onboarder, ERC20 Tribute, and NFT-gated navigators all meet this bar when configured
-correctly. An EOA with MANAGER, or a proxy the deployer can rewrite, never does.
+Every shipped MANAGER navigator meets this bar when configured correctly. An EOA with MANAGER, or a
+proxy the deployer can rewrite, never does.
 
 ## Locks — freezing the roster
 
@@ -100,6 +114,8 @@ Navigator charts a specific course; the crew still decides whether to grant it t
 
 ## Related
 
-Navigators that mint affect who holds [Shares vs. Loot](/docs/concepts/shares-vs-loot). And every
-treasury action a proposal triggers ultimately runs through
-[The Quai Vault Treasury](/docs/concepts/quai-vault-treasury) — covered next.
+- [Navigators overview &amp; catalog](/docs/navigators/overview) — the trust classes in depth and a
+  reference page for every navigator
+- [Use navigators](/docs/guides/use-navigators) — add, sanction, and enable each class step-by-step
+- Navigators that mint affect who holds [Shares vs. Loot](/docs/concepts/shares-vs-loot); every
+  treasury action ultimately runs through [The Quai Vault Treasury](/docs/concepts/quai-vault-treasury).

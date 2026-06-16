@@ -1,0 +1,281 @@
+export const metadata = {
+  title: "Frontend Integration",
+  description:
+    "A safety checklist for rendering DAO Ships indexer data: coerce NUMERIC strings to BigInt, normalize addresses, escape untrusted Poster content, validate URLs, render by trust level, and survive realtime reorgs.",
+};
+
+# Frontend Integration
+
+The indexer is a **read API your frontend queries directly** — Supabase PostgREST for queries and
+Supabase Realtime for live updates. There is no application server in front of it doing escaping or
+shaping for you. Much of the data it serves is user- and contract-supplied on-chain text, so
+treating it safely is the integrator's job.
+
+This page is the rendering and operating checklist. For the catalogue of `ds_*` tables, query
+patterns, and TypeScript row types, see [The Indexer](/docs/developers/indexer).
+
+<Callout type="info" title="Defense in depth">
+The indexer already filters trust levels, validates URL schemes, and strips control characters at
+index time. Do all of the same checks again on the frontend anyway. A validation bug, a schema
+change shipped before your frontend updates, or a pre-validation row left in the database can each
+let something through.
+</Callout>
+
+## Numbers are strings — coerce to BigInt
+
+Every large numeric column is `NUMERIC(78,0)` (a full `uint256`) and arrives over PostgREST as a
+JSON **string**. Smaller values that fit a JS number can arrive as a **number** (a `poll_id` or
+`change_id` of `0` comes back as `0`, not `"0"`). So you cannot assume either type.
+
+Always coerce with `BigInt(String(value))` before any arithmetic or comparison. Never use
+`parseInt`, `parseFloat`, or `Number` — they silently lose precision above `2^53`. Compare against
+`bigint` literals (`=== 0n`), never against string literals (`=== '0'` can be `false` when the value
+is the number `0`).
+
+```ts
+function toBig(value: unknown): bigint {
+  if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+  if (typeof value === "number" && Number.isFinite(value)) return BigInt(Math.trunc(value));
+  return 0n; // safe default for untrusted / unexpected input
+}
+
+const shares = toBig(member.shares);
+const loot = toBig(member.loot);
+const hasPower = shares > 0n || loot > 0n; // not `member.shares === '0'`
+```
+
+Wrap `toBig` around anything sourced from `content_json` in `try/catch` (or keep the regex guard
+above) — a malformed string passed straight to `BigInt()` throws. For display, format the string
+directly with a `BigInt` divisor rather than converting to a float.
+
+## Addresses are lowercase
+
+Every address in the database is stored lowercase — the indexer normalizes them at write time.
+Wallet providers (MetaMask and friends) return EIP-55 **mixed-case** checksum addresses. A direct
+comparison silently fails:
+
+```ts
+// BUG: connectedAddress is mixed-case, dao.avatar is lowercase → never matches
+if (connectedAddress === dao.avatar) showTreasuryControls();
+
+// CORRECT: normalize both sides
+if (connectedAddress.toLowerCase() === dao.avatar) showTreasuryControls();
+
+function addressEq(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+```
+
+Lowercase both sides for every comparison, and lowercase any address you use as a `Map` key, a React
+`key`, or a query filter value.
+
+## Timestamps are UTC ISO 8601
+
+All timestamp columns are `TIMESTAMPTZ` and come back as UTC ISO 8601 strings like
+`2026-03-25T14:30:00.000Z`. The JavaScript `Date` constructor parses these correctly — pass the
+string straight through. **Never strip the trailing `Z`**; doing so reinterprets a UTC instant as
+local time and shifts it by your timezone offset.
+
+```ts
+const created = new Date(record.created_at); // correct
+const label = created.toLocaleString(); // render in the viewer's locale
+```
+
+Proposal and poll **lifecycle status is derived client-side** — there is no stored `status` column.
+The indexer pre-calculates the boundary timestamps (`voting_starts`, `voting_ends`, `grace_ends`,
+`expiration`); compute status from them rather than doing your own period math. See
+[Proposal lifecycle](/docs/concepts/proposal-lifecycle) for the state machine.
+
+```ts
+type ProposalStatus =
+  | "Submitted" | "Voting" | "Grace" | "Ready"
+  | "Processed" | "Defeated" | "Expired" | "Cancelled";
+
+function deriveStatus(p: ProposalRow, now = new Date()): ProposalStatus {
+  if (p.cancelled) return "Cancelled";
+  if (p.processed) return p.passed ? "Processed" : "Defeated";
+  if (!p.sponsored) return "Submitted";
+  if (p.voting_ends && now < new Date(p.voting_ends)) return "Voting";
+  if (p.grace_ends && now < new Date(p.grace_ends)) return "Grace";
+  if (p.expiration && now > new Date(p.expiration)) return "Expired";
+  return "Ready";
+}
+```
+
+## Poster content is untrusted — prevent XSS
+
+<Callout type="danger" title="Never pass Poster fields to dangerouslySetInnerHTML">
+These fields hold arbitrary text written by any wallet (the `Poster` contract is permissionless):
+`ds_daos.name` / `description` / `avatar_img`, `ds_proposals.details` / `proposal_data`,
+`ds_navigators.name` / `description`, `ds_signal_polls.question` / `options` / `description` /
+`discussion_url`, and `ds_records.content` / `content_json`. Passing any of them to
+`dangerouslySetInnerHTML` as raw HTML is a stored-XSS vector.
+</Callout>
+
+For plain text, **rely on React's JSX auto-escaping** — `{dao.name}` is already safe. That covers
+the common case (names, titles, `details`, hex blobs) with no extra work.
+
+```tsx
+<h1>{dao.name}</h1>
+<p>{proposal.details}</p>
+<code>{proposal.proposal_data}</code>
+```
+
+When a field is meant to render as **Markdown** (`description`, an announcement `body`, a member
+`bio`), convert it with `marked` and then sanitize the resulting HTML with `DOMPurify` against a
+strict allow-list. The allow-list must restrict URI schemes so `javascript:` cannot survive.
+
+```tsx
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+
+const SANITIZE = {
+  ALLOWED_TAGS: [
+    "p", "br", "strong", "em", "u", "s", "del",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "ul", "ol", "li", "blockquote", "pre", "code",
+    "a", "img", "table", "thead", "tbody", "tr", "th", "td",
+    "hr", "sup", "sub",
+  ],
+  ALLOWED_ATTR: ["href", "src", "alt", "title", "class"],
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|ipfs):\/\/)/i, // only http, https, ipfs
+  ALLOW_DATA_ATTR: false,
+};
+
+function renderMarkdown(untrusted: string): string {
+  const rawHtml = marked.parse(untrusted, { async: false });
+  return DOMPurify.sanitize(rawHtml, SANITIZE);
+}
+
+function Description({ text }: { text: string }) {
+  return <div dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />;
+}
+```
+
+This is the **only** acceptable use of `dangerouslySetInnerHTML` — on output that DOMPurify has just
+sanitized. Never feed it a raw column.
+
+## Validate URLs
+
+Allow only the `http:`, `https:`, and `ipfs:` schemes. Block `javascript:` and `data:` outright,
+even though the indexer also enforces the scheme allow-list — a bad URL must never reach an
+`href`, `src`, or any other navigable sink.
+
+```ts
+const SAFE_SCHEME = /^(https?:\/\/|ipfs:\/\/)/i;
+const IPFS_GATEWAY = "https://gateway.pinata.cloud/ipfs/";
+
+function safeUrl(url: string | null | undefined): string | null {
+  if (!url || typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (!SAFE_SCHEME.test(trimmed)) return null;
+  const decoded = decodeURIComponent(trimmed).toLowerCase();
+  if (decoded.startsWith("javascript:") || decoded.startsWith("data:")) return null;
+  // ipfs://CID is not browser-loadable — rewrite to an HTTPS gateway
+  if (trimmed.startsWith("ipfs://")) return IPFS_GATEWAY + trimmed.slice(7);
+  return trimmed;
+}
+```
+
+Render a link only through `safeUrl`, and always carry `rel="noopener noreferrer nofollow"` on
+external anchors so a hostile target can neither reach `window.opener` nor inherit your referrer or
+ranking:
+
+```tsx
+function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
+  const url = safeUrl(href);
+  if (!url) return <span>{children}</span>; // fall back to inert text
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer nofollow">
+      {children}
+    </a>
+  );
+}
+```
+
+For images, validate the same way and set `referrerPolicy="no-referrer"`, `crossOrigin="anonymous"`,
+and an `onError` fallback so a broken or hostile `avatar_img` degrades to a placeholder.
+
+## Render by trust level
+
+Every `ds_records` row carries a `trust_level` the indexer computed from who posted it. Use it to
+decide how prominently to present content and which badge to show. A `MEMBER` post must never look
+identical to a `VERIFIED` one — the badge is the only thing separating an individual's opinion from
+the DAO's official voice.
+
+| `trust_level` | Meaning | Suggested badge |
+|---|---|---|
+| `VERIFIED` | Posted by the vault via governance — the DAO speaking officially | Green |
+| `VERIFIED_INITIAL` | Set by the deployer before governance existed | Blue |
+| `SEMI_TRUSTED` | Posted by a DAO-approved navigator contract | Yellow |
+| `MEMBER` | A verified shareholder's personal opinion | Gray |
+| `ON_CHAIN_PROVISIONAL` | Orphan / pre-DAO record, provisionally on-chain verified | Neutral |
+
+`UNTRUSTED` posts are rejected at index time and never appear in the database, so you will never
+render one. Treat an unknown `trust_level` as untrusted: render no badge rather than a default one.
+
+```tsx
+const BADGE: Record<string, { label: string; tone: string }> = {
+  VERIFIED: { label: "Verified (Governance)", tone: "green" },
+  VERIFIED_INITIAL: { label: "Set by Deployer", tone: "blue" },
+  SEMI_TRUSTED: { label: "Navigator", tone: "yellow" },
+  MEMBER: { label: "Member", tone: "gray" },
+  ON_CHAIN_PROVISIONAL: { label: "Provisional", tone: "neutral" },
+};
+
+function TrustBadge({ level }: { level?: string }) {
+  const b = level ? BADGE[level] : undefined;
+  return b ? <span className={`badge badge-${b.tone}`}>{b.label}</span> : null;
+}
+```
+
+<Callout type="warning" title="A navigator's trust_status is a separate gate">
+`trust_level` (on records) is not the same thing as a navigator's `trust_status`. Read-only and
+module navigators (Signal, Budget) can be deployed by anyone claiming any DAO. **Hide their feeds
+unless `trust_status === 'sanctioned'`** — see [Navigators overview](/docs/navigators/overview).
+Permissioned navigators are vouched by `NavigatorSet` and are always sanctioned.
+</Callout>
+
+## Realtime: handle the rough edges
+
+Realtime payloads are the same rows you get over REST, so **every rule above** — coercion,
+normalization, escaping, URL validation, trust gating — applies unchanged to them. Beyond that, the
+transport has three rough edges:
+
+- **Delivery is not guaranteed.** A dropped WebSocket can silently miss events. On reconnect,
+  re-fetch the affected data over REST to resync rather than assuming your state is current.
+- **Order is not guaranteed.** Events can arrive out of order. Reconcile by `block_number` — only
+  replace an existing row when the incoming payload's `block_number` is greater than or equal to the
+  one you already hold.
+- **DELETE means reorg.** A `DELETE` payload signals a chain reorg that removed a row. Drop it from
+  your UI state; do not treat it as a user action.
+
+```ts
+function reconcile(rows: RecordRow[], incoming: RecordRow): RecordRow[] {
+  const i = rows.findIndex((r) => r.id === incoming.id);
+  if (i < 0) return [...rows, incoming];
+  if ((incoming.block_number ?? 0) >= (rows[i].block_number ?? 0)) {
+    const next = [...rows];
+    next[i] = incoming; // newer (or same) block wins
+    return next;
+  }
+  return rows; // keep what we have; the incoming payload is stale
+}
+```
+
+## Operational signals
+
+The indexer's health surface exposes `requires_full_reindex` (with `reindex_reason` and
+`reindex_flagged_at`). It is set when a reorg deeper than the confirmation window is detected, which
+means member-balance totals may have drifted until a reindex completes. When it is `true`, show a
+**non-blocking "data may be stale" banner** — it is *not* "indexer down," and the rest of the data
+remains readable.
+
+Health responses are cached server-side for about **5 seconds**. Polling faster than that just
+returns the same cached payload, so set your poll interval to 5s or slower.
+
+## Related
+
+- [The Indexer](/docs/developers/indexer) — tables, row types, and query patterns
+- [Contracts](/docs/developers/contracts) — the deployed contracts the indexer watches
+- [Navigators overview](/docs/navigators/overview) — `trust_status` and the navigator trust classes

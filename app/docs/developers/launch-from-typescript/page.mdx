@@ -81,7 +81,7 @@ value produces a vault prediction that will not match the deployed address.
 
 ```ts
 const launcher = new quais.Contract(
-  "0x0036B11eEC6aa17407b0e157fA9caa32b7EFC9D1", // DAOShipAndVaultLauncher
+  "0x0030d87f987F24603108bEe81cE212a007Bfb6dD", // DAOShipAndVaultLauncher
   DAOSHIP_AND_VAULT_LAUNCHER_ABI,
   signer,
 );
@@ -167,7 +167,7 @@ under the recognized tag so the indexer picks it up:
 
 ```ts
 const poster = new quais.Contract(
-  "0x005C3957b8f612BBcdCFCbeDb8C53C3d3b3FEEdc", // Poster
+  "0x0028DCeb1CAfb4d6B2B5f69313329Aeb0E66cf34", // Poster
   [
     "function post(string content, string tag) external",
     "event NewPost(address indexed user, string content, string indexed tag)",

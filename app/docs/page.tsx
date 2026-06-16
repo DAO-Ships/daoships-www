@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, BookOpen, Compass, Code2, HelpCircle } from "lucide-react";
+import { ArrowRight, BookOpen, Compass, Code2, HelpCircle, Navigation } from "lucide-react";
 import { docsNav } from "@/lib/docs";
 
 export const metadata: Metadata = {
@@ -9,7 +9,8 @@ export const metadata: Metadata = {
     "Concepts, step-by-step guides, and developer reference for building with DAO Ships on Quai Network.",
 };
 
-const icons = [Compass, BookOpen, Code2, HelpCircle];
+// One icon per section, in docsNav order: Concepts, Navigators, Guides, Developers, Reference.
+const icons = [Compass, Navigation, BookOpen, Code2, HelpCircle];
 
 export default function DocsHome() {
   return (

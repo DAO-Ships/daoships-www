@@ -1,0 +1,128 @@
+export const metadata = {
+  title: "Navigators — Overview & Catalog",
+  description:
+    "The full catalog of DAO Ships navigators, the ADMIN/MANAGER/GOVERNOR permission model, and the three trust classes — permissioned, read-only, and module — that decide how a navigator is endorsed and whether the app surfaces it.",
+};
+
+# Navigators — Overview &amp; Catalog
+
+A bare governance system can do one thing: pass proposals. **Navigators** are immutable extension
+contracts that give a ship extra crew roles — onboarding members, accepting tribute, running polls,
+vesting tokens, paying recurring budgets — without bloating the core `DAOShip`. If you've heard of
+Moloch-style "shamans," Navigators are the DAO Ships equivalent, rebuilt with a standard interface and
+hardened safety model. For the conceptual primer, see [Navigators](/docs/concepts/navigators).
+
+This page is the **catalog and reference hub**: the permission model, the three trust classes, and a
+link to every shipped navigator.
+
+## The permission model — a three-bit bitmask
+
+Permissioned navigators are granted an additive **bitmask** of three roles:
+
+| Bit | Role | Value | Can do |
+| --- | --- | --- | --- |
+| 0 | ADMIN | `1` | Pause / unpause Share and Loot transfers |
+| 1 | MANAGER | `2` | Mint and burn Shares and Loot, convert Shares to Loot |
+| 2 | GOVERNOR | `4` | Change governance config, cancel proposals |
+
+Values add up: `3` = ADMIN + MANAGER, `6` = MANAGER + GOVERNOR, `7` = all three. The maximum is `7`.
+Granting or changing a navigator's permission is **governance-only** — it always requires a passed
+proposal calling `setNavigators`, never a single party's say-so.
+
+<Callout type="danger" title="A MANAGER navigator can mint without limit">
+The MANAGER role grants unrestricted authority to mint Shares to any address. A malicious MANAGER
+could mint itself enough Shares to pass a proposal granting itself full control. The architecture
+assumes MANAGER navigators are **immutable, audited contracts** bounded by a mint cap, an allowlist,
+or an expiry — never an EOA, never an upgradeable proxy. Confirm at least one hard bound before
+granting MANAGER.
+</Callout>
+
+## The three trust classes
+
+Not every navigator takes a permission bit. How a navigator is *endorsed* — and whether the app shows
+its data at all — depends on which of three classes it belongs to. This is the single most important
+thing to understand about the current navigator system.
+
+| Class | Navigators | Authority comes from | Endorsed by | Shown in app when |
+| --- | --- | --- | --- | --- |
+| **Permissioned** | Onboarder, ERC-20 Tribute, NFT-Gate, Timelock, Vesting, Subscription | A `DAOShip` permission bit | Governance `setNavigators` proposal | Permission granted |
+| **Read-only** | Signal (polls) | Nothing — it never mutates the DAO | A vault Poster post listing it | DAO has sanctioned it |
+| **Module** | Budget | Vault module status (Zodiac) | Governance enabling it on the vault | Vault has enabled it |
+
+Every navigator announces itself on deploy with a `NavigatorDeployed` event and is recorded by the
+indexer against the DAO it names. But announcing is not the same as being trusted:
+
+- **`self_asserted`** — deployed and pointed at a DAO, but not yet endorsed. The indexer does **not**
+  materialize a self-asserted read-only or module navigator's data, and the app hides it (or puts it
+  behind a "show unverified" toggle). This is the spam guard.
+- **`sanctioned`** — the DAO endorsed it through the signal appropriate to its class (a permission
+  grant, a vault navigator-list post, or a vault module-enable). Its data is materialized and shown.
+- **`unsanctioned`** — endorsement was revoked (permission cleared, de-listed, or module disabled).
+- **`fabricated`** — Signal only: poll weights failed reconciliation against on-chain voting power;
+  the poll is suppressed.
+
+<Callout type="info" title="Why three classes instead of one">
+A navigator that mints (Onboarder) needs a `DAOShip` permission. A navigator that only *reads* voting
+power (Signal polls) needs **no** permission — so it's gated socially, by a DAO posting that it
+endorses it. A navigator that spends the **treasury** (Budget) isn't a `DAOShip` concern at all — it's
+a module on the Quai Vault, enabled the same way any Zodiac module is. Each class is endorsed where its
+power actually lives.
+</Callout>
+
+### What this means in practice
+
+- **Permissioned navigators** are endorsed and revoked through a **Navigators proposal**
+  (`setNavigators`). The moment the proposal processes, the navigator can act.
+- **Signal (read-only)** must be **sanctioned after launch**: the DAO's vault posts a
+  `daoships.dao.navigators` list naming the navigator. Until then its polls are invisible. Signal
+  **cannot** be added in the launch wizard — the DAO doesn't exist on the indexer yet, so a Signal
+  navigator deployed during launch is dropped. Add it from the DAO's **Navigators** page.
+- **Budget (module)** must be **enabled on the vault** via a proposal that calls
+  `enableModule`. A deployed-but-not-enabled Budget navigator is powerless and hidden.
+
+The [Use navigators](/docs/guides/use-navigators) guide walks through each endorsement flow
+step-by-step.
+
+## The shipped navigators
+
+Eight navigators ship today. All are audited (zero unresolved findings) and supported end-to-end by
+the contracts, the indexer, and the app.
+
+| Navigator | Class · Permission | What it does |
+| --- | --- | --- |
+| [Onboarder](/docs/navigators/onboarder) | Permissioned · MANAGER | Native QUAI tribute → Shares / Loot |
+| [ERC-20 Tribute](/docs/navigators/erc20-tribute) | Permissioned · MANAGER | ERC-20 tribute → Shares / Loot, with permit |
+| [NFT-Gate](/docs/navigators/nft-gate) | Permissioned · MANAGER | ERC-721 holders claim membership (one claim per token) |
+| [Signal](/docs/navigators/signal) | Read-only · none | Non-binding, share-weighted governance polls |
+| [Timelock](/docs/navigators/timelock) | Permissioned · GOVERNOR | A mandatory delay on governance-config changes |
+| [Vesting](/docs/navigators/vesting) | Permissioned · MANAGER | Cliff + linear vesting of Shares or Loot |
+| [Budget](/docs/navigators/budget) | Module · vault | Recurring treasury disbursement without per-payment votes |
+| [Subscription](/docs/navigators/subscription) | Permissioned · MANAGER | Recurring membership dues with keeper collection |
+
+## Locks — freezing the roster
+
+Governance can permanently **lock** a permission with `lockAdmin`, `lockManager`, or `lockGovernor`. A
+lock means *no new* navigators can be granted that role. Locks are **one-way — there is no unlock.**
+
+- Locking does **not** revoke existing navigators; governance can still strip a compromised one.
+- Governance proposals can still call the locked functions directly (via `executeAsGovernance`), so
+  the DAO never loses the ability to act through a vote.
+
+## Planned navigators
+
+These are designed but not yet shipped. Don't rely on them in production plans yet:
+
+- **Delegate Registry** (read-only) — an on-chain directory where delegates self-register with a name
+  and metadata.
+- **Circuit Breaker** (ADMIN) — auto-pauses tokens on anomalies like mint spikes or treasury drains.
+- **Oracle** (GOVERNOR) — adjusts governance parameters within bounded ranges based on on-chain
+  conditions (e.g. participation rates), to break quorum deadlocks.
+- **ERC-1155 Gate** (MANAGER) — credential gating on ERC-1155 balances, deferred pending a safe
+  escrow design for fungible, revocable membership. (Today's NFT-Gate is **ERC-721 only**.)
+
+## Related
+
+- [Navigators](/docs/concepts/navigators) — the conceptual primer and permission model
+- [Use navigators](/docs/guides/use-navigators) — add, sanction, and enable each class
+- [Build a Navigator](/docs/developers/build-a-navigator) — write your own
+- [Indexer &amp; data layer](/docs/developers/indexer) — the tables that back each navigator

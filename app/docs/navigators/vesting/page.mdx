@@ -1,0 +1,132 @@
+export const metadata = {
+  title: "Vesting Navigator — Cliff + Linear Token Vesting",
+  description:
+    "The Vesting navigator mints Shares or Loot to a beneficiary on a cliff + linear schedule, minting incrementally as tokens vest — no escrow, so unvested tokens carry no voting power and cannot be ragequit until claimed.",
+};
+
+# Vesting Navigator
+
+The Vesting navigator grants a beneficiary a stream of Shares **or** Loot that unlocks over time on a
+**cliff + linear schedule**. Governance creates each schedule through a passed proposal; the beneficiary
+(or the vault) pulls the unlocked tokens with `claim`. It's how a ship rewards contributors, advisors, or
+core teams without handing over full voting weight on day one.
+
+<Callout type="tip" title="One-sentence version">
+A mint authorization that ripens over time — `claim` mints whatever has vested but not yet been minted,
+straight to the beneficiary.
+</Callout>
+
+**Class:** Permissioned · **Permission:** MANAGER (`2`). It's endorsed through a governance
+`setNavigators` proposal and added **post-launch** — see [Navigators overview](/docs/navigators/overview)
+for the trust model. The audit found **no Critical, High, or Medium** findings.
+
+## No escrow — the model that changes everything
+
+There is **no locked pool**. The navigator never mints unvested tokens; it only holds the *right to mint*
+up to each schedule's `totalAmount`, and mints **incrementally as tokens vest**.
+
+<Callout type="warning" title="Unvested tokens do not exist on-chain">
+Before tokens vest they have **zero voting power**, **cannot be transferred**, and **cannot be ragequit** —
+because they have not been minted at all. Claiming does not "activate" pre-existing power. Power exists
+only once tokens are minted at claim. For Shares, claimed tokens **auto-delegate**, so voting power is live
+immediately on the claim transaction.
+</Callout>
+
+Each schedule vests exactly **one** token kind — Shares or Loot, set by `isLoot`. Vesting Shares dilutes
+voting power on claim; vesting Loot dilutes economic and [ragequit](/docs/concepts/ragequit) value but not
+votes (see [Shares vs Loot](/docs/concepts/shares-vs-loot)). To vest **both**, create two schedules.
+
+## The vesting math
+
+Accrual is **linear from `startTime`**, not from the cliff. A 1-year cliff on a 4-year vest unlocks 25% in
+a lump the instant the cliff passes, then continues linearly:
+
+```
+if now < cliffEnd:            vested = 0
+else if now >= vestingEnd:    vested = totalAmount
+else:                         vested = totalAmount * (now - startTime) / (vestingEnd - startTime)
+
+claimable = vested - claimed
+```
+
+A beneficiary (or the vault/avatar) may **claim anytime** there is a positive `claimable` amount — the call
+mints the vested-but-unclaimed amount directly to the beneficiary, regardless of who calls it. Mid-vest
+amounts round down to integer-division dust, but the final claim at or after `vestingEnd` returns the exact
+`totalAmount`, so no one loses dust by the end. **Multiple schedules per beneficiary** are supported.
+
+## Schedule parameters
+
+Each schedule is created with these per-schedule fields. There is **no global dilution cap** — amounts are
+bounded only by governance sizing `totalAmount` against current supply at proposal-review time.
+
+| Parameter | Meaning |
+| --- | --- |
+| `beneficiary` | Address the tokens mint to. Immutable once set. |
+| `totalAmount` | Total tokens this schedule will vest. The only dilution bound. |
+| `isLoot` | `false` vests Shares; `true` vests Loot. One kind per schedule. |
+| `startTime` | When linear accrual begins (`0` resolves to the creation block). |
+| `cliffEnd` | No tokens are claimable before this time. |
+| `vestingEnd` | At or after this time the full `totalAmount` is vested. |
+
+## Revoke — non-destructive
+
+Governance can `revoke` a schedule to **freeze future accrual** at that block's timestamp. Revoke does
+**not** claw back already-minted tokens: the beneficiary keeps everything minted up to the revoke instant and
+can still `claim` anything that accrued but was unclaimed at that point. Revoke is one-way per schedule;
+a second revoke reverts with `AlreadyRevoked`. True clawback is a separate governance burn call, not part of
+this navigator.
+
+## Pause — never traps funds
+
+`pause` blocks **`createSchedule` only**. `claim` and `revoke` always work, paused or not — so vested funds
+are never trapped behind a pause. To stop a specific schedule, `revoke` it; there is no global "freeze all
+claims." Pause and unpause are callable by a GOVERNOR navigator or the avatar.
+
+<Callout type="info" title="Do not yank MANAGER as a pause">
+Claims mint through the DAO, so the navigator must keep its MANAGER permission for claims to work. Revoking
+that permission is a fail-closed kill switch that strands every beneficiary's unclaimed vested tokens until
+re-granted. Use `pause` or per-schedule `revoke` instead.
+</Callout>
+
+## Add it
+
+The Vesting navigator is **permissioned**, so it's endorsed through a governance proposal calling
+`setNavigators` to grant it MANAGER (`2`). It's added **after launch**, not in the launch wizard. Once the
+proposal processes the navigator can act, and governance creates grants with `createSchedule` (avatar-only)
+— batch many grants into one proposal where useful. The [Use navigators](/docs/guides/use-navigators) guide
+walks through the endorsement flow.
+
+## Events &amp; indexer data
+
+Each claim also fires a paired DAO mint and token `Transfer` in the same transaction. **Take balances and
+voting power from `Transfer` via `ds_members`** — `TokensClaimed` is the vesting-activity feed only, and its
+`amount` is **incremental**, never cumulative.
+
+| Event | Emitted when | Indexer effect |
+| --- | --- | --- |
+| `ScheduleCreated` | Governance creates a schedule | Upsert a `ds_vesting_schedules` row |
+| `TokensClaimed` | Beneficiary or vault claims | Append one incremental row to `ds_vesting_claims` |
+| `ScheduleRevoked` | Governance revokes a schedule | Mark the schedule revoked at `revoked_at` |
+| `Paused` | Schedule creation paused | Records pause state |
+| `Unpaused` | Schedule creation resumed | Records pause state |
+
+Errors you may encounter: `CliffExceedsVesting`, `NothingToClaim`, `AlreadyRevoked`, `ZeroAmount`, and
+`InvalidBeneficiary`.
+
+| Table | Holds |
+| --- | --- |
+| `ds_vesting_schedules` | One row per schedule. Its `claimed` total is the **sum** of claim rows (derive-from-truth); status is **time-derived** from `cliffEnd`/`vestingEnd`. |
+| `ds_vesting_claims` | One incremental row per claim. |
+
+<Callout type="warning" title="Never read voting power from vesting rows">
+Render schedule progress from `ds_vesting_schedules` and `ds_vesting_claims`, but a member's actual balance
+and voting power come from `ds_members` (the paired `Transfer`), never from the vesting tables.
+</Callout>
+
+## Related
+
+- [Navigators overview](/docs/navigators/overview) — the catalog, permission model, and trust classes
+- [Shares vs Loot](/docs/concepts/shares-vs-loot) — what each token kind grants
+- [Ragequit](/docs/concepts/ragequit) — why only minted tokens can exit
+- [Use navigators](/docs/guides/use-navigators) — endorse and operate navigators
+- [Indexer &amp; data layer](/docs/developers/indexer) — the tables behind every navigator
