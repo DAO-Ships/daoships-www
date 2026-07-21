@@ -28,6 +28,7 @@ const columns = [
       { label: "Developer docs", href: "/docs/developers/architecture" },
       { label: "Contracts", href: "/docs/developers/contracts" },
       { label: "Indexer", href: "/docs/developers/indexer" },
+      { label: "Testnet app", href: site.testnetAppUrl, external: true },
       { label: "GitHub", href: site.github, external: true },
     ],
   },

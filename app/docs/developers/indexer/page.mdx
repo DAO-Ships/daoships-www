@@ -18,8 +18,8 @@ full navigator suite, and `Poster`.
 
 ## Schema per network
 
-Each network is an isolated PostgreSQL schema — `testnet` today, `mainnet` at launch — and every
-table is prefixed `ds_`. Point your client at the schema for the network you're reading (see the
+Each network is an isolated PostgreSQL schema — `mainnet` for the Quai mainnet deployment,
+`testnet` for Orchard — and every table is prefixed `ds_`. Point your client at the schema for the network you're reading (see the
 query examples below).
 
 ## Core tables
@@ -210,7 +210,7 @@ Point the client at the right schema for the network you want:
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  db: { schema: "testnet" }, // or "mainnet"
+  db: { schema: "mainnet" }, // or "testnet" for Orchard
 });
 
 // List DAOs, newest first
@@ -266,7 +266,7 @@ const channel = supabase
   .channel("votes")
   .on(
     "postgres_changes",
-    { event: "INSERT", schema: "testnet", table: "ds_votes", filter: `dao_id=eq.${daoAddress}` },
+    { event: "INSERT", schema: "mainnet", table: "ds_votes", filter: `dao_id=eq.${daoAddress}` },
     (payload) => {
       console.log("new vote", payload.new);
     },
@@ -287,7 +287,7 @@ supabase-js is a thin wrapper over PostgREST. You can hit the REST endpoint dire
 curl "$SUPABASE_URL/rest/v1/ds_daos?select=id,name,total_shares&order=updated_at.desc&limit=10" \
   -H "apikey: $SUPABASE_ANON_KEY" \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-  -H "Accept-Profile: testnet"
+  -H "Accept-Profile: mainnet"
 ```
 
 ### Operational signals

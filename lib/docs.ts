@@ -102,12 +102,12 @@ const KEYWORDS: Record<string, string> = {
   "/docs/guides/manage-members": "shares loot mint burn membership add member convert ragequit guild tokens",
   "/docs/guides/vote-and-delegate": "voting yes no tally quorum reason delegation power delegate",
   "/docs/developers/architecture": "contracts overview zodiac avatar clones module system diagram",
-  "/docs/developers/contracts": "addresses abi deployment cyprus chain 15000 reference singleton launcher poster",
+  "/docs/developers/contracts": "addresses abi deployment cyprus chain 9 15000 mainnet testnet orchard rpc explorer quaiscan reference singleton launcher poster",
   "/docs/developers/launch-from-typescript": "sdk quais code initparams create2 salt launchdaoshipandvault programmatic",
   "/docs/developers/indexer": "supabase postgrest realtime ds tables query data api events graphql trust status sanctioned schema columns navigator",
   "/docs/developers/frontend-integration": "frontend security xss sanitize dompurify bigint numeric address lowercase trust level badge realtime reorg reindex url validation rendering",
   "/docs/developers/build-a-navigator": "inavigator extension solidity permissions mint cap allowlist immutable",
-  "/docs/faq": "questions answers help common audited mainnet cost",
+  "/docs/faq": "questions answers help common audited mainnet testnet networks cost",
 };
 
 export type SearchResult = DocLink & { section: string };

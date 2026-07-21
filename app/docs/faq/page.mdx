@@ -10,11 +10,11 @@ Quick answers to the questions we hear most. If you're brand new, the [What is a
 
 ## What is DAO Ships?
 
-DAO Ships is a framework for launching, governing, and managing DAOs on [Quai Network](https://qu.ai). It packages governance, two membership tokens, and a secured multisig treasury into a single deploy. You create a DAO — a "ship" — through a 7-step wizard at [testnet.daoships.org](https://testnet.daoships.org), with no Solidity required.
+DAO Ships is a framework for launching, governing, and managing DAOs on [Quai Network](https://qu.ai). It packages governance, two membership tokens, and a secured multisig treasury into a single deploy. You create a DAO — a "ship" — through a 7-step wizard at [app.daoships.org](https://app.daoships.org), with no Solidity required.
 
 ## Is it audited?
 
-The contracts have been through multiple internal security review passes with zero unresolved findings — see the [Security](/security) page for the specifics. That said, DAO Ships currently runs on the Quai **Orchard testnet** and is under active development, so treat it as experimental: use testnet QUAI, which has no real-world value, and don't commit funds you can't afford to lose.
+The contracts have been through multiple internal security review passes with zero unresolved findings — see the [Security](/security) page for the specifics. DAO Ships is now live on Quai **mainnet**, which means real funds are at stake. It is young software under active development, so start small and don't commit funds you can't afford to lose. If you want to experiment first, the **Orchard testnet** deployment at [testnet.daoships.org](https://testnet.daoships.org) uses testnet QUAI with no real-world value.
 
 ## How is it different from MolochDAO or Baal?
 
@@ -42,15 +42,15 @@ Navigators are immutable extension contracts that give a DAO extra capabilities 
 
 ## What does it cost to launch?
 
-On the Orchard testnet, launching costs only gas, paid in testnet QUAI you get free from the [Quai faucet](https://faucet.quai.network). There is no platform fee to create a DAO. Launching uses more gas than a typical transaction because it deploys several contracts at once, so keep a comfortable balance on hand.
+Only gas. There is no platform fee to create a DAO — on mainnet you pay gas in QUAI, and on the Orchard testnet in free testnet QUAI from the [Quai faucet](https://faucet.quai.network). Launching uses more gas than a typical transaction because it deploys several contracts at once, so keep a comfortable balance on hand.
 
 ## Is it on mainnet?
 
-Not yet. DAO Ships runs on the Quai Orchard testnet today. Anything you create now is for testing and experimentation. Mainnet availability will be announced separately.
+Yes. DAO Ships is live on Quai mainnet at [app.daoships.org](https://app.daoships.org). The Orchard testnet deployment at [testnet.daoships.org](https://testnet.daoships.org) stays online for testing and experimentation — the two are entirely separate, with their own contracts, DAOs, and data. See [Contracts &amp; addresses](/docs/developers/contracts) for both address sets.
 
 ## Which wallets are supported?
 
-**Pelagus** ([pelaguswallet.io](https://pelaguswallet.io)) is the recommended wallet and the smoothest path. **WalletConnect** is also supported, so you can connect compatible mobile or hardware wallets. Whatever you use, connect it to the app on the Quai **Cyprus-1** zone (chain id `15000`).
+**Pelagus** ([pelaguswallet.io](https://pelaguswallet.io)) is the recommended wallet and the smoothest path. **WalletConnect** is also supported, so you can connect compatible mobile or hardware wallets. Whatever you use, connect it to the Quai **Cyprus-1** zone — chain id `9` for mainnet, or `15000` for the Orchard testnet.
 
 ## How many proposal types are there?
 

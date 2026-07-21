@@ -11,8 +11,9 @@ governance module, and the `SharesERC20` / `LootERC20` tokens — in a single tr
 [quais](https://www.npmjs.com/package/quais) SDK. Then you submit a proposal and attach metadata
 via `Poster`.
 
-Everything targets **Quai Cyprus-1, chain ID `15000`**. Use the canonical addresses from
-[Contracts](/docs/developers/contracts).
+The addresses in the snippets below target **Quai mainnet (Cyprus-1), chain ID `9`**. The same
+code runs against the Orchard testnet (chain ID `15000`) — swap in the testnet column from
+[Contracts](/docs/developers/contracts), which is the canonical source for both networks.
 
 ## 1. Encode the governance config
 
@@ -47,7 +48,7 @@ placeholder — the launcher overwrites it with the real vault address before la
 addresses are likewise filled in by the launcher.
 
 ```ts
-const MULTISEND = "0x002ae8A47C2da497fe569AfCF0486410aA1093E0"; // MultiSendCallOnly
+const MULTISEND = "0x003f62e6a7f2EB6b94345a9A41671888eC4A3ebA"; // MultiSendCallOnly (mainnet)
 const founder = "0xYourFounderAddress";
 
 const initParamsTemplate = quais.AbiCoder.defaultAbiCoder().encode(
@@ -81,7 +82,7 @@ value produces a vault prediction that will not match the deployed address.
 
 ```ts
 const launcher = new quais.Contract(
-  "0x0030d87f987F24603108bEe81cE212a007Bfb6dD", // DAOShipAndVaultLauncher
+  "0x0067b50Dac689d8688eF8575B82Bc663802f3AF5", // DAOShipAndVaultLauncher (mainnet)
   DAOSHIP_AND_VAULT_LAUNCHER_ABI,
   signer,
 );
@@ -167,7 +168,7 @@ under the recognized tag so the indexer picks it up:
 
 ```ts
 const poster = new quais.Contract(
-  "0x0028DCeb1CAfb4d6B2B5f69313329Aeb0E66cf34", // Poster
+  "0x004Db03AA2593B4885AFEFF688ca2634D1533fac", // Poster (mainnet)
   [
     "function post(string content, string tag) external",
     "event NewPost(address indexed user, string content, string indexed tag)",

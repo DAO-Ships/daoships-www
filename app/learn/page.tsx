@@ -172,7 +172,7 @@ export default function LearnPage() {
               </h2>
               <p className="mx-auto mt-4 max-w-lg text-lg text-dao-text-secondary">
                 That&apos;s the whole loop — crew, proposals, treasury, exit. Launching your
-                own on Quai testnet takes a few minutes and one transaction.
+                own on Quai mainnet takes a few minutes and one transaction.
               </p>
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
                 <a href={site.launchUrl} className="btn-primary">

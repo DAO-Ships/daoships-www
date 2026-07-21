@@ -1,13 +1,13 @@
 export const metadata = {
   title: "Contract Reference",
   description:
-    "Canonical deployed addresses, network details, and the role and key functions of every DAO Ships contract on Quai Cyprus-1.",
+    "Canonical deployed addresses on Quai mainnet and Orchard testnet, network details, and the role and key functions of every DAO Ships contract.",
 };
 
 # Contract Reference
 
-This page lists the **canonical deployed addresses** for the DAO Ships protocol, the network
-they live on, and what each contract does. The addresses below come from
+This page lists the **canonical deployed addresses** for the DAO Ships protocol on both networks
+it runs on, and what each contract does. The addresses below come from
 `deployment-addresses.json` in the contracts repository and match the addresses the live app
 uses in `src/config/contracts.ts`.
 
@@ -17,17 +17,21 @@ The addresses on this page are the canonical deployment. If a value disagrees wi
 file, prefer the ones here.
 </Callout>
 
-## Network
+## Networks
 
-| Property | Value |
-|----------|-------|
-| Network | Quai Orchard Testnet (Cyprus-1) |
-| Chain ID | `15000` |
-| RPC URL | `https://rpc.orchard.quai.network` |
-| Block explorer | `https://orchard.quaiscan.io` |
-| Native currency | QUAI (18 decimals) |
-| Solidity | `0.8.22` |
-| OpenZeppelin | v5 |
+DAO Ships is live on **Quai mainnet** and remains deployed on the **Orchard testnet** for
+experimentation. Both run on the Cyprus-1 zone.
+
+| Property | Mainnet | Orchard Testnet |
+|----------|---------|-----------------|
+| App | [app.daoships.org](https://app.daoships.org) | [testnet.daoships.org](https://testnet.daoships.org) |
+| Zone | Cyprus-1 | Cyprus-1 |
+| Chain ID | `9` | `15000` |
+| RPC URL | `https://rpc.quai.network` | `https://rpc.orchard.quai.network` |
+| Block explorer | `https://quaiscan.io` | `https://orchard.quaiscan.io` |
+| Native currency | QUAI (18 decimals) | Testnet QUAI (18 decimals) |
+
+Both deployments use Solidity `0.8.22` and OpenZeppelin v5.
 
 Cyprus-1 uses a sharded address scheme — all addresses on this shard begin with the `0x00`
 prefix, which is why deployment relies on CREATE2 salt mining (see
@@ -35,22 +39,27 @@ prefix, which is why deployment relies on CREATE2 salt mining (see
 
 ## Deployed addresses
 
-| Contract | Address | Role |
-|----------|---------|------|
-| `Poster` | `0x0028DCeb1CAfb4d6B2B5f69313329Aeb0E66cf34` | EIP-3722 metadata bus |
-| `DAOShipSingleton` | `0x004c1BCDf5Bf30c0cd8Aa1d9A5c4c49FF3368dd9` | Logic for `DAOShip` clones |
-| `SharesERC20Singleton` | `0x003b6C160596e5Ac87044bAAe05750e6A9862FdD` | Logic for voting-token clones |
-| `LootERC20Singleton` | `0x00085a2D9b407671270362087AC0fe5E272D0582` | Logic for loot-token clones |
-| `DAOShipLauncher` | `0x003BD5aC6f75cFA8E1949Eb9A5EB967966c1b455` | Clone factory (DAO + tokens) |
-| `DAOShipAndVaultLauncher` | `0x0030d87f987F24603108bEe81cE212a007Bfb6dD` | Atomic factory (DAO + vault) |
+| Contract | Mainnet | Orchard Testnet | Role |
+|----------|---------|-----------------|------|
+| `Poster` | `0x004Db03AA2593B4885AFEFF688ca2634D1533fac` | `0x0028DCeb1CAfb4d6B2B5f69313329Aeb0E66cf34` | EIP-3722 metadata bus |
+| `DAOShipSingleton` | `0x002956ba6223d17b67Af509bb057928299B11611` | `0x004c1BCDf5Bf30c0cd8Aa1d9A5c4c49FF3368dd9` | Logic for `DAOShip` clones |
+| `SharesERC20Singleton` | `0x0019d1FcdB7Aa83aCD17a5484f3246d1959d38fF` | `0x003b6C160596e5Ac87044bAAe05750e6A9862FdD` | Logic for voting-token clones |
+| `LootERC20Singleton` | `0x0059458879E8f1FCA65f3068d9BC587b0Fd81286` | `0x00085a2D9b407671270362087AC0fe5E272D0582` | Logic for loot-token clones |
+| `DAOShipLauncher` | `0x001aa208480e8495067217c5238913dF1eC683d7` | `0x003BD5aC6f75cFA8E1949Eb9A5EB967966c1b455` | Clone factory (DAO + tokens) |
+| `DAOShipAndVaultLauncher` | `0x0067b50Dac689d8688eF8575B82Bc663802f3AF5` | `0x0030d87f987F24603108bEe81cE212a007Bfb6dD` | Atomic factory (DAO + vault) |
 
 The app also references this Quai Vault infrastructure, pre-deployed by the Quai Vault project:
 
-| Contract | Address | Role |
-|----------|---------|------|
-| `QuaiVaultFactory` | `0x002d1305D597c157bB975967FA2e5337674b0E5F` | Creates vault (avatar) proxies |
-| `VaultSingleton` | `0x004E539Cf477A5Cb456A56023f083cD91Bc4934e` | Quai Vault implementation |
-| `MultiSendCallOnly` | `0x002ae8A47C2da497fe569AfCF0486410aA1093E0` | Batched-call DelegateCall target |
+| Contract | Mainnet | Orchard Testnet | Role |
+|----------|---------|-----------------|------|
+| `QuaiVaultFactory` | `0x003613aC5FFd45bFF7B2F0210DA2fF660908c488` | `0x002d1305D597c157bB975967FA2e5337674b0E5F` | Creates vault (avatar) proxies |
+| `VaultSingleton` | `0x0038E6d84412A10CdcE41b0f62A05350023f1fb6` | `0x004E539Cf477A5Cb456A56023f083cD91Bc4934e` | Quai Vault implementation |
+| `MultiSendCallOnly` | `0x003f62e6a7f2EB6b94345a9A41671888eC4A3ebA` | `0x002ae8A47C2da497fe569AfCF0486410aA1093E0` | Batched-call DelegateCall target |
+
+<Callout type="warning" title="Addresses differ per network">
+The mainnet and testnet deployments are entirely separate — no address is shared between them.
+Always select the column matching the chain ID your wallet or provider is connected to.
+</Callout>
 
 <Callout type="info" title="Navigators have no canonical address">
 There is no protocol-wide registry or singleton for [Navigators](/docs/navigators/overview). Each one is

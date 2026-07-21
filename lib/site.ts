@@ -2,7 +2,11 @@
 // App/docs URLs are env-overridable so deployment can point them at the real hosts.
 
 export const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL ?? "https://testnet.daoships.org";
+  process.env.NEXT_PUBLIC_APP_URL ?? "https://app.daoships.org";
+
+// Orchard testnet deployment of the app — still live for experimentation.
+export const TESTNET_APP_URL =
+  process.env.NEXT_PUBLIC_TESTNET_APP_URL ?? "https://testnet.daoships.org";
 
 export const site = {
   name: "DAO Ships",
@@ -13,6 +17,7 @@ export const site = {
   launchUrl: `${APP_URL}/launch`,
   exploreUrl: `${APP_URL}/explore`,
   appUrl: APP_URL,
+  testnetAppUrl: TESTNET_APP_URL,
   // Org hosting the open-source repos (verified from git remotes).
   github: "https://github.com/DAO-Ships",
   quai: "https://qu.ai",

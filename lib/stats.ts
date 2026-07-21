@@ -1,5 +1,5 @@
 // Live protocol stats from the DAO Ships indexer (Supabase / PostgREST).
-// Falls back gracefully to curated testnet figures when env is not configured,
+// Falls back gracefully to placeholder figures when env is not configured,
 // so the page is never broken by a missing/offline indexer.
 
 export type Stat = { label: string; value: string; live: boolean };
@@ -34,7 +34,7 @@ async function countTable(base: string, key: string, schema: string, table: stri
 export async function getStats(): Promise<Stat[]> {
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const schema = process.env.NEXT_PUBLIC_INDEXER_SCHEMA ?? "testnet";
+  const schema = process.env.NEXT_PUBLIC_INDEXER_SCHEMA ?? "mainnet";
   if (!base || !key) return FALLBACK;
 
   try {

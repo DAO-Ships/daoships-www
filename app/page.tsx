@@ -28,8 +28,7 @@ export default async function HomePage() {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-500 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-500" />
               </span>
-              Live on Quai Orchard Testnet
-              <span className="text-dao-text-muted">· Mainnet coming soon</span>
+              Live on Quai Mainnet
             </span>
           </Reveal>
           <Reveal delay={0.04} className="mt-6">
@@ -82,7 +81,7 @@ export default async function HomePage() {
               ))}
             </dl>
             <p className="mt-3 font-mono text-xs text-dao-text-hint">
-              Live from the DAO Ships indexer · Quai Orchard Testnet (Cyprus-1)
+              Live from the DAO Ships indexer · Quai Mainnet (Cyprus-1)
             </p>
           </Reveal>
         </div>
@@ -278,7 +277,7 @@ await tx.wait();`}</code>
               Ready to take the helm?
             </h2>
             <p className="mx-auto mt-4 max-w-lg text-lg text-dao-text-secondary">
-              Spin up a DAO on Quai testnet in minutes. No fork to maintain, no
+              Spin up a DAO on Quai mainnet in minutes. No fork to maintain, no
               treasury contract to trust — just governance that works.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
