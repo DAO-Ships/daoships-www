@@ -24,7 +24,7 @@ points** (`10000 = 100%`).
 import { quais } from "quais";
 
 const governanceConfig = quais.AbiCoder.defaultAbiCoder().encode(
-  ["uint32", "uint32", "uint256", "uint256", "uint256", "uint256"],
+  ["uint32", "uint32", "uint256", "uint256", "uint256", "uint256", "uint32"],
   [
     7 * 24 * 3600,          // votingPeriod: 7 days
     3 * 24 * 3600,          // gracePeriod: 3 days
@@ -32,9 +32,17 @@ const governanceConfig = quais.AbiCoder.defaultAbiCoder().encode(
     2000,                   // quorumPercent: 20% (basis points)
     quais.parseQuai("1"),   // sponsorThreshold: 1 share
     6600,                   // minRetentionPercent: 66%
+    7 * 24 * 3600,          // defaultExpiryWindow: 7 days
   ],
 );
 ```
+
+<Callout type="danger" title="All seven fields are required">
+`DAOShip` decodes this blob as a **seven**-field tuple, and the trailing `defaultExpiryWindow` is a
+`uint32`, not a `uint256`. Omit it or mistype it and `abi.decode` reverts during DAO
+initialization — the launch fails with no clearer signal than a failed transaction. See
+[Governance parameters](/docs/guides/governance-parameters) for per-template values.
+</Callout>
 
 <Callout type="danger" title="Basis points, not percentages">
 Pass `2000` for 20%, `10000` for 100%. Passing a raw percentage like `20` creates a near-zero
