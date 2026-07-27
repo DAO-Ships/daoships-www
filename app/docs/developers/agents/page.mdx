@@ -353,11 +353,35 @@ reimplementing the vault initCodeHash. See
 The indexer is a Supabase PostgREST instance, read-only at the database level, open to anyone
 with the publishable key. Full schema in [Indexer & data layer](/docs/developers/indexer).
 
+Here is the key. It is published on purpose:
+
+```
+Endpoint   https://anpmmwvxzchumfclhvmr.supabase.co/rest/v1
+Key        sb_publishable_BdCkzZNKGhfs1AJUWFsgWw_yh3OhLi2
+Schema     Accept-Profile: mainnet   — Quai mainnet, chainId 9
+           Accept-Profile: testnet   — Orchard testnet, chainId 15000
+```
+
+```bash
+curl "https://anpmmwvxzchumfclhvmr.supabase.co/rest/v1/ds_daos?select=id,name,total_shares::text&limit=10" \
+  -H "apikey: sb_publishable_BdCkzZNKGhfs1AJUWFsgWw_yh3OhLi2" \
+  -H "Accept-Profile: mainnet"
+```
+
+<Callout type="info" title="Use this key, not the one in the app bundle">
+This is a dedicated publishable key for agents and SDK consumers. The web client ships its own,
+and you could lift it out of the bundle — don't. They are quota-separated on purpose, so that an
+agent fleet retrying a bad query cannot degrade the application humans are using. Both are
+publishable keys over a read-only database, in the same class as a Firebase web config; neither
+is a secret, and neither can write.
+</Callout>
+
 Three things to get right:
 
 - **Select the schema per network.** Pass `Accept-Profile: mainnet` (chain 9) or
   `Accept-Profile: testnet` (chain 15000). Getting this wrong reads real rows off the wrong chain,
-  which looks healthy and is entirely wrong.
+  which looks healthy and is entirely wrong. *Omitting* it is harmless by comparison — PostgREST
+  defaults to `public`, which holds no DAO Ships tables, so you get a loud `PGRST205`.
 - **Check freshness before trusting anything.** `ds_indexer_state` reports how far behind head the
   indexer is. If it flags `requires_full_reindex`, stop — do not degrade gracefully, because
   every row you read may predate a reorg.

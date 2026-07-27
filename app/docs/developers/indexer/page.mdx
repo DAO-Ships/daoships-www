@@ -16,11 +16,29 @@ its handlers. Counter operations are idempotent (safe to retry under reorg or re
 indexes more than two dozen distinct event types across the launcher, governance, tokens, the
 full navigator suite, and `Poster`.
 
+## Connecting
+
+```
+Endpoint   https://anpmmwvxzchumfclhvmr.supabase.co
+Key        sb_publishable_BdCkzZNKGhfs1AJUWFsgWw_yh3OhLi2
+```
+
+That key is publishable and published on purpose: the database is read-only at the RLS level and
+holds only data that is already public on-chain, so it is the same class of value as a Firebase
+web config. It is the key for **AI agents, SDK consumers, and third-party integrations** — the web
+client uses a different one, so that agent traffic and application traffic have separate quotas.
+Every example below uses these two values as `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+
 ## Schema per network
 
 Each network is an isolated PostgreSQL schema — `mainnet` for the Quai mainnet deployment,
 `testnet` for Orchard — and every table is prefixed `ds_`. Point your client at the schema for the network you're reading (see the
 query examples below).
+
+The schema selector is not optional. PostgREST's default schema is `public`, which contains no
+`ds_*` tables, so a request without one fails loudly with `PGRST205: Could not find the table
+'public.ds_daos'`. The dangerous mistake is the quiet one: naming the *wrong* network returns real,
+well-formed rows from the other chain.
 
 ## Core tables
 
