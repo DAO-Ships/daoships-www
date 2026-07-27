@@ -11,15 +11,21 @@ it runs on, and what each contract does. The addresses below come from
 `deployment-addresses.json` in the contracts repository and match the addresses the live app
 uses in `src/config/contracts.ts`.
 
-<Callout type="warning" title="Verify before you build against these">
-Repositories contain address sets from earlier redeployments, and more than one complete,
-internally-consistent deployment exists on Orchard. Every address on this page has been
-confirmed to hold bytecode on its own chain, and the Orchard column matches what
-[testnet.daoships.org](https://testnet.daoships.org) and the `testnet` indexer schema use.
+<Callout type="warning" title="Orchard has had several deployments — derive, don't copy">
+DAO Ships has been deployed to Orchard more than once, and each deployment is complete and
+internally consistent. Repositories and config files still contain addresses from retired ones,
+so a set assembled by hand from mixed sources can look entirely correct and still be a
+deployment nobody uses.
 
-If a value here disagrees with something else, do not average the two — derive the set from
-the launcher (see [below](#derive-the-addresses-instead-of-copying-them)). A derived set is
-consistent by construction; a hand-assembled one can look right and be a different deployment.
+The Orchard column below is the deployment that
+[testnet.daoships.org](https://testnet.daoships.org) runs against and that the `testnet` indexer
+schema records — verified against the running application, not against a config file. Every
+address holds bytecode, and the whole set reproduces from its launcher via the walk
+[below](#derive-the-addresses-instead-of-copying-them).
+
+**If a value here disagrees with something you found elsewhere, derive the set from
+`DAOShipAndVaultLauncher` and trust that.** A derived set is consistent by construction. That is
+the only check that distinguishes the live deployment from a retired one.
 </Callout>
 
 ## Networks
@@ -52,12 +58,12 @@ prefix, which is why deployment relies on CREATE2 salt mining (see
 
 | Contract | Mainnet | Orchard Testnet | Role |
 |----------|---------|-----------------|------|
-| `Poster` | `0x004Db03AA2593B4885AFEFF688ca2634D1533fac` | `0x005C3957b8f612BBcdCFCbeDb8C53C3d3b3FEEdc` | EIP-3722 metadata bus |
-| `DAOShipSingleton` | `0x002956ba6223d17b67Af509bb057928299B11611` | `0x0034B574bDC240d37b6F08248Ae069727164002C` | Logic for `DAOShip` clones |
-| `SharesERC20Singleton` | `0x0019d1FcdB7Aa83aCD17a5484f3246d1959d38fF` | `0x00366CedcB0B99A9E5Dfb9B7dE1484A895118235` | Logic for voting-token clones |
-| `LootERC20Singleton` | `0x0059458879E8f1FCA65f3068d9BC587b0Fd81286` | `0x00521258bBD3B23Bc10c3Fc77d360Df4379dE054` | Logic for loot-token clones |
-| `DAOShipLauncher` | `0x001aa208480e8495067217c5238913dF1eC683d7` | `0x00487182EA7a7881d84C63099001B0195a41BFB3` | Clone factory (DAO + tokens) |
-| `DAOShipAndVaultLauncher` | `0x0067b50Dac689d8688eF8575B82Bc663802f3AF5` | `0x0036B11eEC6aa17407b0e157fA9caa32b7EFC9D1` | Atomic factory (DAO + vault) |
+| `Poster` | `0x004Db03AA2593B4885AFEFF688ca2634D1533fac` | `0x0032eA61e8fF1b12A70C39696CfdA06198d2095e` | EIP-3722 metadata bus |
+| `DAOShipSingleton` | `0x002956ba6223d17b67Af509bb057928299B11611` | `0x000F38Dc0B711a57086ca0bD6fa2041D8Cd9Fe03` | Logic for `DAOShip` clones |
+| `SharesERC20Singleton` | `0x0019d1FcdB7Aa83aCD17a5484f3246d1959d38fF` | `0x001a4f36ead605149A0144C771B7cbf4116753a9` | Logic for voting-token clones |
+| `LootERC20Singleton` | `0x0059458879E8f1FCA65f3068d9BC587b0Fd81286` | `0x002abA2592A1111b8EcfFcA98A7f30b8de30cA58` | Logic for loot-token clones |
+| `DAOShipLauncher` | `0x001aa208480e8495067217c5238913dF1eC683d7` | `0x005D0D996cB3f25bEC37E1827FeAfCe5AC9f7856` | Clone factory (DAO + tokens) |
+| `DAOShipAndVaultLauncher` | `0x0067b50Dac689d8688eF8575B82Bc663802f3AF5` | `0x0054Cb24fA412B2b276D5F73f4A7adC70f0f0Cbf` | Atomic factory (DAO + vault) |
 
 The app also references this Quai Vault infrastructure, pre-deployed by the Quai Vault project:
 
