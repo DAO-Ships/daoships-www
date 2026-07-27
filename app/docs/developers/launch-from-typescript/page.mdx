@@ -157,9 +157,15 @@ you — it predicts `DAOShip` first, then feeds that address into the vault pred
 2. **Phase 2** — mine `vault`, using the `daoShip` address from phase 1. The vault's
    `initCodeHash` embeds it, so the two phases cannot be collapsed.
 
-The salt packing also differs by factory: `QuaiVaultFactory` uses
-`keccak256(abi.encodePacked(address, bytes32))`, `DAOShipLauncher` uses
-`keccak256(abi.encodePacked(address, uint256))`. And the vault is a `QuaiVaultProxy`, **not** an
+The two factories declare their salt parameter differently — `QuaiVaultFactory` takes a `bytes32`,
+`DAOShipLauncher` a `uint256` — but **that distinction never reaches the hash**.
+`abi.encodePacked` renders both as the same 32 big-endian bytes, so
+`keccak256(abi.encodePacked(address, bytes32))` and `keccak256(abi.encodePacked(address, uint256))`
+are identical for the same value. One implementation covers both factories; there is nothing to
+branch on. Do pad short salts to a full 32 bytes, though — a short hex string packed as `bytes32`
+is a different preimage.
+
+The vault is a `QuaiVaultProxy`, **not** an
 ERC-1167 minimal proxy like the other three, so its `initCodeHash` is
 `keccak256(QuaiVaultProxy.bytecode + abi.encode(["address","bytes"], [implementation, initData]))`.
 

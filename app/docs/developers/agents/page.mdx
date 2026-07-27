@@ -329,10 +329,15 @@ with no clearer signal than a failed transaction.
 ### CREATE2 salt mining is two-phase and the sender is not you
 
 The salt sender is `DAOShipAndVaultLauncher` — it is `msg.sender` to both factories — not your
-EOA. The two factories pack salts differently
-(`abi.encodePacked(address, bytes32)` for `QuaiVaultFactory`,
-`abi.encodePacked(address, uint256)` for `DAOShipLauncher`). And the vault's initCodeHash embeds
-the *predicted DAOShip address* as `initialModules`, so mining cannot be done in one pass:
+EOA. That is the mistake that costs a launch.
+
+The factories' differing salt parameter types (`bytes32` on `QuaiVaultFactory`, `uint256` on
+`DAOShipLauncher`) are **not** a second trap, despite looking like one: `abi.encodePacked` renders
+both as the same 32 big-endian bytes, so one implementation covers both. Pad short salts to a full
+32 bytes and move on.
+
+The vault's initCodeHash embeds the *predicted DAOShip address* as `initialModules`, so mining
+cannot be done in one pass:
 
 1. Mine shares, loot, and DAOShip — independent of each other.
 2. Mine the vault, using the DAOShip address from step 1.
