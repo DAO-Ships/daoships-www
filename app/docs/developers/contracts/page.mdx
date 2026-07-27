@@ -27,9 +27,15 @@ experimentation. Both run on the Cyprus-1 zone.
 | App | [app.daoships.org](https://app.daoships.org) | [testnet.daoships.org](https://testnet.daoships.org) |
 | Zone | Cyprus-1 | Cyprus-1 |
 | Chain ID | `9` | `15000` |
-| RPC URL | `https://rpc.quai.network` | `https://rpc.orchard.quai.network` |
+| RPC URL | `https://rpc.quai.network/cyprus1` | `https://orchard.rpc.quai.network/cyprus1` |
 | Block explorer | `https://quaiscan.io` | `https://orchard.quaiscan.io` |
 | Native currency | QUAI (18 decimals) | Testnet QUAI (18 decimals) |
+
+<Callout type="warning" title="The shard path is part of the URL">
+`https://rpc.quai.network` — without `/cyprus1` — returns **404**. Confirm an endpoint before
+building against it: `quai_chainId` should return `0x9` on mainnet and `0x3a98` (15000) on
+Orchard.
+</Callout>
 
 Both deployments use Solidity `0.8.22` and OpenZeppelin v5.
 
@@ -57,8 +63,57 @@ The app also references this Quai Vault infrastructure, pre-deployed by the Quai
 | `MultiSendCallOnly` | `0x003f62e6a7f2EB6b94345a9A41671888eC4A3ebA` | `0x002ae8A47C2da497fe569AfCF0486410aA1093E0` | Batched-call DelegateCall target |
 
 <Callout type="warning" title="Addresses differ per network">
-The mainnet and testnet deployments are entirely separate — no address is shared between them.
-Always select the column matching the chain ID your wallet or provider is connected to.
+The mainnet and testnet deployments are separate. Always select the column matching the chain ID
+your wallet or provider is connected to. (The three Quai Vault contracts above are the exception —
+that infrastructure is shared across DAO Ships deployments on the same network.)
+</Callout>
+
+## Derive the addresses instead of copying them
+
+A hardcoded table of nine addresses has nine chances to be stale. You only need **two** per
+network — `DAOShipAndVaultLauncher` and `Poster` — because seven of the remaining eight are
+reachable on-chain from the launcher:
+
+```
+DAOShipAndVaultLauncher (published)
+├── .daoShipLauncher()    → DAOShipLauncher
+│     ├── .daoShipSingleton() → DAOShipSingleton
+│     ├── .sharesSingleton()  → SharesERC20Singleton
+│     └── .lootSingleton()    → LootERC20Singleton
+├── .multisendCallOnly()  → MultiSendCallOnly
+└── .quaiVaultFactory()   → QuaiVaultFactory
+      └── .implementation()   → QuaiVault singleton
+```
+
+Only `Poster` is unreachable — it is standalone infrastructure with no back-reference from the
+graph — so it is the second address you pin.
+
+```ts
+const launcher = new quais.Contract(LAUNCHER, DAOSHIP_AND_VAULT_LAUNCHER_ABI, provider);
+
+const daoShipLauncher = await launcher.daoShipLauncher();
+const vaultFactory    = await launcher.quaiVaultFactory();
+const multisend       = await launcher.multisendCallOnly();
+
+const dsl = new quais.Contract(daoShipLauncher, DAOSHIP_LAUNCHER_ABI, provider);
+const [daoShipSingleton, sharesSingleton, lootSingleton] = await Promise.all([
+  dsl.daoShipSingleton(), dsl.sharesSingleton(), dsl.lootSingleton(),
+]);
+```
+
+A set derived this way is internally consistent by construction. A set assembled by hand from
+mixed sources is not — and the failure is quiet, because a coherent-but-wrong deployment behaves
+perfectly right up until you notice the indexer has never heard of your DAO.
+
+<Callout type="info" title="`deployment-addresses.json` is not the whole set">
+`daoships-contracts/deployment-addresses.json` lists six of the nine: `Poster`, both token
+singletons, `DAOShipSingleton`, `DAOShipLauncher`, and `DAOShipAndVaultLauncher`.
+`MultiSendCallOnly`, `QuaiVaultFactory`, and the QuaiVault singleton are **not in it** — take
+those from the walk above.
+
+The QuaiVault singleton in particular is deployed by the [Quai Vault](https://quaivault.org)
+project, appears in no DAO Ships repository, and can change without a commit anywhere in this
+org. Read it from `QuaiVaultFactory.implementation()` rather than caching it.
 </Callout>
 
 <Callout type="info" title="Navigators have no canonical address">

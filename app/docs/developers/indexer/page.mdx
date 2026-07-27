@@ -186,21 +186,59 @@ Aggregate **totals** are recomputed from their source rows on every change, not 
 rows), budget `total_spent` (from disbursement rows), and subscription `total_paid` (from payment
 rows) are all derive-from-truth, which makes them replay- and reorg-safe.
 
-## NUMERIC(78,0) maps to strings
+## NUMERIC(78,0): cast to text, or lose the value
 
 Token amounts and voting power are `uint256` on-chain. In Postgres they are stored as
-`NUMERIC(78, 0)` — large enough to hold any `uint256`. Over PostgREST these come back as
-**strings**, not JavaScript numbers, to avoid precision loss. Always parse them into `BigInt`:
+`NUMERIC(78, 0)` — large enough to hold any `uint256`. **PostgREST serialises them as bare JSON
+numbers**, so by the time `JSON.parse` has run, the value is already a double and the damage is
+done. This is a live response from the mainnet indexer:
 
-```ts
-const totalShares = BigInt(dao.total_shares); // dao.total_shares is a string
+```json
+[{"id":"0x001117dd…","name":"The First DAO Ships DAO","total_shares":3000000000000000000000}]
 ```
 
+There is no safe coercion after the fact. Both of the obvious repairs fail:
+
+```ts
+const v = JSON.parse(body)[0].total_shares; // 3e+21, a Number
+
+BigInt(v);          // may be silently WRONG — 1234567890123456789012 → …774144 (off by 14868)
+BigInt(String(v));  // THROWS: "Cannot convert 3e+21 to a BigInt"
+```
+
+Anything at or above `1e21` stringifies to exponential notation, which `BigInt()` rejects
+outright. Below that it converts, but to whatever value the double rounded to. A wrong balance
+and a thrown exception are both bad; the wrong balance is worse, because it looks like an answer.
+
+<Callout type="danger" title="Cast in the query, not in your code">
+Append `::text` to every large numeric column in the `select`. The value then arrives as a string
+and never becomes a `Number` at all.
+
+```ts
+// supabase-js
+const { data } = await supabase
+  .from("ds_daos")
+  .select("id, total_shares::text, total_loot::text")
+  .eq("id", daoId);
+
+// raw PostgREST
+// GET /rest/v1/ds_daos?select=id,total_shares::text,total_loot::text&id=eq.0x…
+
+BigInt(data[0].total_shares); // safe — it was never a double
+```
+</Callout>
+
+If you cannot control every `select` — a generic query layer, say — rewrite the raw response body
+*before* parsing it, quoting only those integer literals that cannot round-trip through a double
+and leaving the rest byte-identical. Track string state while scanning so digits inside names,
+descriptions, and hashes are never touched. The web client does exactly this as a `fetch` wrapper
+on the Supabase client, because it cannot annotate every call site.
+
 Smaller integer columns (`voting_period`, `proposal_count`, `yes_votes`, `block_number`) are
-`BIGINT` and are safe as numbers within typical ranges. Note that small `NUMERIC` values (a
-`poll_id`, `change_id`, or `schedule_id` of `0`) can arrive as a JSON **number** rather than a
-string — so even values that look numeric should be coerced with `BigInt(String(x))` before any
-comparison or arithmetic.
+`BIGINT` and are safe as numbers within typical ranges. Small `NUMERIC` values (a `poll_id`,
+`change_id`, or `schedule_id`) arrive as JSON numbers too — those are fine to read directly, but
+if you are going to do arithmetic on them, cast them the same way rather than reasoning about
+which columns happen to be small today.
 
 ## Querying with supabase-js
 
@@ -284,11 +322,39 @@ supabase-js is a thin wrapper over PostgREST. You can hit the REST endpoint dire
 `Accept-Profile` header to choose the schema:
 
 ```bash
-curl "$SUPABASE_URL/rest/v1/ds_daos?select=id,name,total_shares&order=updated_at.desc&limit=10" \
+curl "$SUPABASE_URL/rest/v1/ds_daos?select=id,name,total_shares::text&order=updated_at.desc&limit=10" \
   -H "apikey: $SUPABASE_ANON_KEY" \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
   -H "Accept-Profile: mainnet"
 ```
+
+### Every list response is a bounded window
+
+PostgREST enforces a server-side maximum row count regardless of what you ask for, and the
+failure is silent: you get `200 OK` and a well-formed array, just not all of it. Past the cap,
+rows do not paginate — as far as your query is concerned they do not exist. A DAO's proposal
+list that quietly stops at the ceiling looks exactly like a DAO with fewer proposals.
+
+Ask for the true total rather than inferring it from what came back. `Prefer: count=exact`
+returns it after the slash in `Content-Range`:
+
+```bash
+curl -sD - -o /dev/null \
+  "$SUPABASE_URL/rest/v1/ds_records?select=id" \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Accept-Profile: mainnet" \
+  -H "Prefer: count=exact" -H "Range: 0-0"
+# content-range: 0-0/3   ← 3 rows exist upstream
+```
+
+Then walk pages with `Range` (or `.range(from, to)` in supabase-js) until you have them all, and
+keep your own ceiling so a pathological table cannot hang the caller. If you stop early, say so
+out loud — surfacing a truncated list as if it were complete is the bug this prevents.
+
+<Callout type="warning" title="supabase-js query builders are single-use">
+Build a **fresh** builder for each page. Reusing one across `.range()` calls silently returns the
+same page every time, which reads as "the table ended" after page one.
+</Callout>
 
 ### Operational signals
 

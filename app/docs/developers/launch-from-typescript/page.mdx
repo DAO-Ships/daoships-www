@@ -88,9 +88,29 @@ clones are deployed via CREATE2, you mine salts off-chain until
 `minExecutionDelay` **must be `0`** here — `launchDAOShipAndVault` hardcodes `0`, so any other
 value produces a vault prediction that will not match the deployed address.
 
+<Callout type="danger" title="`sender` is the launcher address, not your wallet">
+`calculateAllAddresses(sender, …)` forwards `sender` to `DAOShipLauncher.calculateAddresses`,
+which predicts clone addresses from `keccak256(abi.encodePacked(sender, salt))`. At deploy time
+the caller of `DAOShipLauncher` is `DAOShipAndVaultLauncher` — not you — so the value that
+actually gets hashed is the **launcher's own address**:
+
+```solidity
+// DAOShipAndVaultLauncher.launchDAOShipAndVault
+(address predictedDAOShip, , ) = daoShipLauncher.calculateAddresses(
+    address(this), sharesSalt, lootSalt, daoShipSalt
+);
+```
+
+Pass the `DAOShipAndVaultLauncher` address. Passing your EOA is the intuitive reading of the
+parameter name and it is wrong: you will mine four addresses that all begin with `0x00`, then
+deploy to four entirely different addresses that probably do not — and the launch reverts.
+</Callout>
+
 ```ts
+const LAUNCHER = "0x0067b50Dac689d8688eF8575B82Bc663802f3AF5"; // DAOShipAndVaultLauncher (mainnet)
+
 const launcher = new quais.Contract(
-  "0x0067b50Dac689d8688eF8575B82Bc663802f3AF5", // DAOShipAndVaultLauncher (mainnet)
+  LAUNCHER,
   DAOSHIP_AND_VAULT_LAUNCHER_ABI,
   signer,
 );
@@ -102,6 +122,7 @@ function startsWith00(addr: string): boolean {
   return addr.toLowerCase().startsWith("0x00");
 }
 
+// `sender` must be LAUNCHER — never the founder EOA. See the callout above.
 async function mineSalts(sender: string) {
   for (let i = 0; ; i++) {
     const sharesSalt = BigInt(i) * 4n + 0n;
@@ -127,13 +148,33 @@ prefer a local prediction routine over an RPC round-trip per attempt when you ha
 addresses and creation bytecode.
 </Callout>
 
+<Callout type="warning" title="Predicting locally? Mining is two-phase, and the two factories pack salts differently">
+The loop above is single-pass because `calculateAllAddresses` resolves the ordering on-chain for
+you — it predicts `DAOShip` first, then feeds that address into the vault prediction as
+`initialModules`. A local reimplementation does not get that for free:
+
+1. **Phase 1** — mine `shares`, `loot`, and `daoShip`. These are independent of each other.
+2. **Phase 2** — mine `vault`, using the `daoShip` address from phase 1. The vault's
+   `initCodeHash` embeds it, so the two phases cannot be collapsed.
+
+The salt packing also differs by factory: `QuaiVaultFactory` uses
+`keccak256(abi.encodePacked(address, bytes32))`, `DAOShipLauncher` uses
+`keccak256(abi.encodePacked(address, uint256))`. And the vault is a `QuaiVaultProxy`, **not** an
+ERC-1167 minimal proxy like the other three, so its `initCodeHash` is
+`keccak256(QuaiVaultProxy.bytecode + abi.encode(["address","bytes"], [implementation, initData]))`.
+
+Mine naively, then verify the result with a single `calculateAllAddresses` call rather than
+trusting a local reimplementation of the vault hash.
+</Callout>
+
 ## 4. Launch
 
-Pass the mined salts to `launchDAOShipAndVault`. The `sender` you mined against **must** equal
-the transaction sender, or the predicted addresses will not match.
+Pass the mined salts to `launchDAOShipAndVault`. The `sender` you mined against **must** be the
+`DAOShipAndVaultLauncher` address — it is `msg.sender` to both factories at deploy time — or the
+predicted addresses will not match what gets deployed.
 
 ```ts
-const salts = await mineSalts(await signer.getAddress());
+const salts = await mineSalts(LAUNCHER); // NOT await signer.getAddress()
 
 const tx = await launcher.launchDAOShipAndVault(
   initParamsTemplate,

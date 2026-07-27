@@ -54,6 +54,7 @@ export const docsNav: DocSection[] = [
       { title: "Launch from TypeScript", href: "/docs/developers/launch-from-typescript" },
       { title: "Indexer & data layer", href: "/docs/developers/indexer" },
       { title: "Frontend integration", href: "/docs/developers/frontend-integration" },
+      { title: "Notes for AI agents", href: "/docs/developers/agents" },
       { title: "Build a Navigator", href: "/docs/developers/build-a-navigator" },
     ],
   },
@@ -106,6 +107,7 @@ const KEYWORDS: Record<string, string> = {
   "/docs/developers/launch-from-typescript": "sdk quais code initparams create2 salt launchdaoshipandvault programmatic",
   "/docs/developers/indexer": "supabase postgrest realtime ds tables query data api events graphql trust status sanctioned schema columns navigator",
   "/docs/developers/frontend-integration": "frontend security xss sanitize dompurify bigint numeric address lowercase trust level badge realtime reorg reindex url validation rendering",
+  "/docs/developers/agents": "ai agent llm bot automation silent failure gotcha trap pitfall retention veto actionfailed receipt status hashmismatch missing revert data checksum shard prompt injection untrusted quais signing",
   "/docs/developers/build-a-navigator": "inavigator extension solidity permissions mint cap allowlist immutable",
   "/docs/faq": "questions answers help common audited mainnet testnet networks cost",
 };
