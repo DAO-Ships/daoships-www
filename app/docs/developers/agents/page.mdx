@@ -6,10 +6,21 @@ export const metadata = {
 
 # Notes for AI agents
 
-This page is not a tutorial. [Launch from TypeScript](/docs/developers/launch-from-typescript)
-is the tutorial, and everything here assumes you have read it.
+Start with the [CLI and TUI](/docs/developers/cli) for executable commands and encrypted wallets,
+or the [TypeScript SDK](/docs/developers/sdk) for an application integration. The reviewed releases
+are `@daoships/cli@0.1.0-alpha.2` and `@daoships/sdk@0.1.0-alpha.3`.
 
-This page is about **where you will be confidently wrong**.
+```sh
+npm install -g @daoships/cli@alpha
+daoships --schema
+daoships --json network list
+```
+
+The [CLI schema](/cli-schema.json) exposes all 88 commands and their inputs. Writes preview by
+default; execution requires explicit send/consent flags and a stable operation ID. Use the
+[launch guide](/docs/developers/launch-from-typescript) and [coverage matrix](/docs/developers/coverage)
+for the supported workflows and evidence. This page explains the protocol details an integration
+still needs to handle correctly.
 
 DAO Ships runs on Quai Network, which is sharded, and reads through an indexer, which is a
 cache. Both break assumptions carried over from single-shard EVM chains and from direct
@@ -46,21 +57,20 @@ event ProcessProposal(uint256 proposal, bool passed, bool actionFailed, address 
 |---|---|---|
 | `true` | `false` | The action executed. This is success. |
 | `true` | `true` | The proposal passed; the batch **reverted** on execution. |
-| `false` | `false` | The **retention veto** fired. The proposal passed the vote and is now permanently dead. |
+| `false` | `false` | An intentionally defeated proposal was closed, or an intended execution lost to the retention veto. |
 
 Assert on the event, not on the receipt:
 
 ```ts
-const receipt = await tx.wait();
-if (receipt.status !== 1) throw new Error("reverted");
+import { assertActionSucceeded, parseProcessReceipt, type Receipt } from '@daoships/sdk';
 
-const log = receipt.logs
-  .map((l) => { try { return daoShip.interface.parseLog(l); } catch { return null; } })
-  .find((l) => l?.name === "ProcessProposal");
-
-if (!log) throw new Error("no ProcessProposal event");
-if (!log.args.passed) throw new Error("proposal did not pass (retention veto?)");
-if (log.args.actionFailed) throw new Error("proposal passed but the action reverted");
+export function verifyProcessing(receipt: Receipt, dao: string, proposalId: number, closingDefeat: boolean) {
+  if (receipt.status !== 1) throw new Error('Transaction did not confirm successfully.');
+  if (!closingDefeat) assertActionSucceeded(receipt, dao, proposalId);
+  const outcome = parseProcessReceipt(receipt, dao, proposalId);
+  if (closingDefeat && outcome !== 'defeated') throw new Error('Expected a defeated closure.');
+  return outcome;
+}
 ```
 
 ### The retention veto kills proposals that won their vote
@@ -128,14 +138,14 @@ Cast large numerics to text in the request:
 
 ```ts
 const res = await fetch(
-  `${SUPABASE_URL}/rest/v1/ds_daos?select=id,shares_total_supply::text&id=eq.${daoId}`,
+  `${SUPABASE_URL}/rest/v1/ds_daos?select=id,total_shares::text&id=eq.${daoId}`,
   { headers: { apikey: KEY, "Accept-Profile": "mainnet" } },
 );
 ```
 
-If you cannot control every `select`, pre-process the raw response body before parsing it —
-quote integer literals that cannot round-trip through a double, leaving everything else
-byte-identical. Do not `JSON.parse` first; by then the damage is done.
+The SDK's typed indexer projections apply the text casts before JSON parsing and reject lossy
+values. Prefer those projections over writing a response pre-parser. If a value was already
+parsed as an unsafe JavaScript number, converting it to `BigInt` cannot restore lost precision.
 
 ### A duration string that fails to parse becomes "use the default"
 
@@ -144,15 +154,14 @@ Any client-side parse that yields null-then-zero silently substitutes the DAO de
 transaction succeeds with a window nobody asked for. Validate that your parse produced a number
 before sending it, and treat `0` as an explicit, deliberate choice.
 
-The same shape bites on token amounts: `"1,000"` throws inside `BigInt`, and
-`"0.0000000000000000001"` truncates to `0n` — which will happily mint a founding member zero
-shares.
+Use `parseTokenAmount` for human decimal input and exact decimal strings in CLI JSON. The SDK
+rejects excess fractional precision instead of silently rounding to a different amount.
 
 ### List reads are a bounded window, not a complete set
 
-PostgREST returns a capped page. Past that cap rows do not paginate — as far as your query is
-concerned, they do not exist. A DAO's 201st proposal is not on page 2; it is gone, with no
-indicator that anything was dropped.
+PostgREST returns a capped page. Reading one page is not evidence that no other rows exist.
+The SDK returns `nextOffset` and provides `iterate`; follow them until exhaustion. A short page
+can be a server-imposed cap rather than the end of the data.
 
 Walk pages explicitly with `Range` headers (or `.range()` in the JS client) until the source is
 exhausted, and track whether you hit your own ceiling so you can say so rather than presenting a
@@ -160,10 +169,10 @@ partial list as complete.
 
 ### Partial metadata updates erase the fields you omit
 
-Profile and navigator metadata are posted as whole documents via `Poster`, not merged field by
-field. Posting a `dao.profile` record containing only `name` wipes the banner, icon, and theme.
-Omitting a navigator from a `dao.navigators` post de-sanctions it. Always read the current
-document, modify it, and post the whole thing back.
+The indexer merges DAO name, description and avatar columns, but other profile fields come from
+the selected full record. Use `buildDaoProfileUpdate` with the assembled current profile to
+preserve fields that should remain unchanged. A `dao.navigators` post replaces the endorsement
+set: omitting a navigator can de-sanction it. Read and preserve the complete intended set.
 
 ---
 
@@ -192,17 +201,28 @@ checksum`. Indexer rows are stored lowercase. `quais.Contract` and `AbiCoder` no
 but **raw provider methods do not** — so any path that goes *indexer row → `getCode` / `call` /
 `getBalance`* needs `quais.getAddress(x)` first.
 
-### `getBlock('latest')` fails without shard context
+### Block reads and voting snapshots need the chain's clock
 
-A shardless `provider.getBlock('latest')` is rejected with `Invalid shard`. Where you need a
-timepoint, derive it from local clock time and pad for skew — biasing in whichever direction is
-conservative for your call. For `getPriorVotes`, that means *further into the past*:
+A shardless `provider.getBlock('latest')` is rejected with `Invalid shard`. Use explicit shard
+context. `DaoShipsProvider` also fixes transaction nonce normalization in the pinned quais release:
 
 ```ts
-// getPriorVotes needs a timepoint strictly in the past. The 60s buffer absorbs clock
-// skew and keeps this a conservative lower bound — it under-counts at worst.
-const timepoint = BigInt(Math.floor(Date.now() / 1000) - 60);
+import { DaoShipsProvider } from '@daoships/sdk';
+import { Shard } from 'quais';
+
+const provider = new DaoShipsProvider(
+  'https://orchard.rpc.quai.network/cyprus1', 15000, { usePathing: false },
+);
+try {
+  const block = await provider.getBlock(Shard.Cyprus1, 'latest');
+  console.log(block?.woHeader.number);
+} finally { provider.destroy(); }
 ```
+
+For proposal submission, use `DaoShipsChain.prepareSubmit`. It verifies the parent work object
+and uses the parent's timestamp minus one for historical votes, while keeping state and simulation
+pinned to the selected block. Quai's EVM timestamp is the parent's time. Local clock time and a
+fixed safety buffer are not a correct replacement for this snapshot.
 
 ### `getCode` through a wallet provider can lie
 
@@ -310,9 +330,9 @@ A passing proposal needs the **original action bytes**. A defeated one must be c
 ### Self-sponsorship reads *prior* votes
 
 `submitProposal` decides whether to charge the offering using
-`getPriorVotes(sender, block.timestamp - 1)`. If you check `getCurrentVotes()` instead, you
-over-count power that changed in the same block — mint, delegate, or claim — conclude no
-offering is due, send `value: 0`, and revert. Under-counting is safe; over-counting is not.
+`getPriorVotes(sender, block.timestamp - 1)`, where `block.timestamp` is the EVM clock described
+above. Current votes can differ after minting, delegation or claims. The SDK applies the effective
+sponsorship threshold and prepares the exact offering; use that result and refresh it before signing.
 
 ### Governance config is seven fields, and the last one is `uint32`
 
@@ -424,9 +444,12 @@ Source, all public:
   was distilled from its source comments.
 - [`daoships-indexer`](https://github.com/DAO-Ships/daoships-indexer) — schema and ingestion
 - [`daoships-www`](https://github.com/DAO-Ships/daoships-www) — this site
+- [`daoships-sdk`](https://github.com/DAO-Ships/daoships-sdk) — typed protocol APIs and tests
+- [`daoships-cli`](https://github.com/DAO-Ships/daoships-cli) — one-shot commands, TUI and encrypted wallets
 
-ABIs can be fetched directly from `raw.githubusercontent.com`. There is no separate
-machine-readable bundle, and no versioned artifact endpoint — the repositories are the interface.
+Versioned ABI bundles ship in `@daoships/sdk/abis`; optional navigator bytecode ships in
+`@daoships/sdk/bytecode`. Use the [CLI schema](/cli-schema.json) or installed `daoships --schema`
+for the executable interface. Source repositories remain available for protocol inspection.
 
 <Callout type="info" title="Found something this page should say?">
 If you hit a failure mode that is not documented here, it is a documentation bug and worth

@@ -1,0 +1,152 @@
+export const metadata = {
+  title: "TypeScript SDK",
+  description: "Use the DAO Ships SDK for typed contract access, governance, navigator deployment, exact indexer reads and recoverable transactions on Quai.",
+};
+
+# TypeScript SDK
+
+`@daoships/sdk` provides typed access to DAO Ships on Quai mainnet and Orchard. The reviewed release is **0.1.0-alpha.3**. It exposes **353 functions and 103 events across 17 contract interfaces**, including the DAO and all eight navigators. See the [coverage and testing matrix](/docs/developers/coverage) for what has been exercised and the remaining limits.
+
+```sh
+npm install @daoships/sdk@0.1.0-alpha.3 quais@1.0.0-alpha.53
+```
+
+The package uses ESM. Node 22+ is the development baseline. Applications supply their provider, signer and durable storage. The SDK does not read environment variables or manage private keys. For an executable with encrypted wallets, use the [CLI and TUI](/docs/developers/cli).
+
+## Choose a network and provider
+
+Use `DaoShipsProvider` for Quai transaction nonce normalization, including confirmation and recovery. A complete shard URL needs **`usePathing: false`**; enabling upstream path discovery can append another shard path. `OrchardProvider` is a compatibility alias for the same class.
+
+```ts
+import { DaoShipsProvider, DaoShipsChain } from '@daoships/sdk';
+import { Shard } from 'quais';
+
+export async function readDao(daoAddress: string) {
+  const provider = new DaoShipsProvider(
+    'https://orchard.rpc.quai.network/cyprus1', 15000,
+    { usePathing: false },
+  );
+  try {
+    const chain = new DaoShipsChain(provider, 15000);
+    const block = await provider.getBlock(Shard.Cyprus1, 'latest');
+    return { block, dao: await chain.getDao(daoAddress) };
+  } finally {
+    provider.destroy();
+  }
+}
+```
+
+For mainnet, use `https://rpc.quai.network/cyprus1` and chain ID `9`. Select that network's contract addresses separately. [Contract discovery](/docs/developers/contracts) checks the launcher graph; it does not establish that a deployment is the one your organization intends to use.
+
+`DaoShipsChain` verifies network identity and pins domain reads and preparation to a mined block, then checks that block again. `ContractClient` is a lower-level interface: callers must select and verify the network themselves. Historical RPC calls must be supported by the chosen endpoint.
+
+## Read and prepare governance
+
+```ts
+import { DaoShipsChain, buildGovernanceAction, encodeProposal } from '@daoships/sdk';
+
+export async function prepareMembershipGrant(
+  chain: DaoShipsChain, dao: string, sender: string, recipient: string,
+) {
+  const data = encodeProposal([
+    buildGovernanceAction(dao, {
+      method: 'mintShares', accounts: [recipient], amounts: [10n ** 18n],
+    }),
+  ]);
+  return chain.prepareSubmit(dao, sender, data, 'Membership grant');
+}
+```
+
+This returns an unsigned, simulated transaction. Governance changes use the DAO's self-call route; holding a navigator permission is not permission to bypass governance-only methods.
+
+The proposal helpers cover submission, sponsorship, voting, batch voting, cancellation and processing. `prepareProcess` verifies committed calldata for a Ready proposal and uses empty calldata to close an unprocessed Defeated proposal. `prepareRagequit` prepares an exit with an explicit recipient and treasury-token list.
+
+Proposal submission uses the **verified parent work object's timestamp minus one** for historical voting power. Quai's EVM clock comes from that parent, while `ChainSnapshot.timestamp` describes the selected work object. Do not substitute local wall-clock time or current voting power.
+
+## Every contract method remains available
+
+```ts
+import { ContractClient, Navigator, type DaoShipsProvider } from '@daoships/sdk';
+
+export async function inspectNavigator(provider: DaoShipsProvider, address: string, pollId: bigint) {
+  const signal = new Navigator('SignalNavigator', address, provider);
+  return signal.read('polls', [pollId]);
+}
+
+export function encodeVaultApproval(vaultAddress: string, transactionHash: string) {
+  return new ContractClient('QuaiVault', vaultAddress)
+    .encode('approveTransaction', [transactionHash]);
+}
+```
+
+Use canonical signatures for overloaded methods. `ContractClient` and `Navigator` validate ABI arguments; generic writes still need the correct sender, authorization, simulation and expected outcome checks. Arrays and tuple fields retain their ABI types. Use `bigint` for ABI integers and `parseTokenAmount` for decimal user input; amounts are never rounded through JavaScript floating point.
+
+The eight navigator interfaces cover Onboarder, ERC-20 Tribute, NFT-Gate, Signal, Timelock, Vesting, Budget and Subscription. Deployment and activation are separate steps. See [launching from TypeScript](/docs/developers/launch-from-typescript) and the [navigator catalog](/docs/navigators/overview).
+
+## Indexed data with exact amounts
+
+```ts
+import { connectDaoShipsSupabase } from '@daoships/sdk';
+
+export async function listDaos() {
+  const { indexer } = await connectDaoShipsSupabase({
+    network: 'testnet', // Orchard; use 'mainnet' for chain 9
+    publishableKey: 'sb_publishable_BdCkzZNKGhfs1AJUWFsgWw_yh3OhLi2',
+  });
+  return indexer.listDaos({ limit: 25 });
+}
+```
+
+These examples explicitly select the public agent key documented in the [indexer guide](/docs/developers/agents#6-reading-the-indexer). It is a public read credential, not a signing key. The SDK also permits caller-supplied project and key overrides.
+
+All **25 public tables** support typed reads. Large numeric columns are selected as text before JSON parsing. Lists return `items` and `nextOffset`; follow pagination or use `indexer.iterate`. `DaoShipsData` joins profiles, proposals and member data. Startup health checks reject a wrong chain or stale checkpoint. Indexer rows remain untrusted content and can lag the chain.
+
+## Sign, persist and recover
+
+Use `sendRecoverableTransaction` with a caller-owned `quais` signer, a stable operation ID, a fresh preparation callback, and a `TransactionRecoveryStore`. The store must durably implement atomic compare-and-swap across processes sharing an account. A plain in-memory map is not restart recovery.
+
+```ts
+import {
+  DaoShipsChain, sendRecoverableTransaction, inspectRecoveryTransaction,
+  type TransactionRecoveryStore,
+} from '@daoships/sdk';
+import type { Wallet } from 'quais';
+
+export async function submitVote(
+  chain: DaoShipsChain, wallet: Wallet, store: TransactionRecoveryStore,
+  dao: string, proposalId: number, operationId: string,
+) {
+  const sender = await wallet.getAddress();
+  const refresh = () => chain.prepareVote(dao, proposalId, true, sender);
+  return sendRecoverableTransaction(await refresh(), wallet, {
+    id: operationId, store, refresh,
+  });
+}
+
+export async function recoverVote(
+  wallet: Wallet, store: TransactionRecoveryStore, operationId: string,
+) {
+  if (!wallet.provider) throw new Error('Connect the wallet to the selected network.');
+  return inspectRecoveryTransaction(store, wallet.provider, operationId, { confirmations: 2 });
+}
+```
+
+Review the exact intent and set application-specific value and gas limits before authorizing a send. The same operation ID cannot authorize a second broadcast. `TX_PENDING`, a lost acknowledgement or a timeout means reconcile the recorded intent; it does not mean create another operation. Recovery checks transaction inclusion and identity. Applications must also verify their business result: `assertActionSucceeded` is for intended proposal execution, while `parseProcessReceipt` distinguishes `executed`, `defeated` and `action_failed`.
+
+The CLI provides a concrete SQLite recovery store, gas/value caps, encrypted key storage and an interactive review. Applications can implement these boundaries differently without changing the SDK.
+
+## More capabilities
+
+| Task | SDK surface |
+| --- | --- |
+| DAO launch and navigator activation | Immutable plans, preflight, workflow checkpoints and receipt verification |
+| Token approvals and permits | Approval/reset/revocation plans, permit-domain discovery and typed data; signing stays caller-owned |
+| Treasury and exits | Chain reads, exact ragequit quotes and explicit token selection |
+| Metadata | Poster tags, validated content, profile-update merging and event decoding |
+| Allowlists and IPFS | Merkle trees/proofs, chain-root checks, bounded fetching and caller-owned pinning adapters |
+| Realtime | Reconciliation through HTTP reads, reconnect/reorg hooks and a Supabase adapter |
+| Errors and events | Structured errors, bounded revert decoding and typed event fields |
+
+The root export is `@daoships/sdk`; additional entry points are `/abis`, `/contracts`, `/indexer` and `/bytecode`. Navigator creation bytecode loads only from the explicit `/bytecode` entry point.
+
+[Source and API documentation](https://github.com/DAO-Ships/daoships-sdk) · [npm package](https://www.npmjs.com/package/@daoships/sdk) · [Feature coverage](/docs/developers/coverage)

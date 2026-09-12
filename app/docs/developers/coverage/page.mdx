@@ -1,0 +1,75 @@
+export const metadata = {
+  title: "SDK and CLI coverage",
+  description: "Verified protocol coverage, local contract execution, Orchard acceptance and remaining SDK and CLI testing boundaries.",
+};
+
+# SDK and CLI coverage
+
+Reviewed **12 September 2026**: SDK **0.1.0-alpha.3** and CLI **0.1.0-alpha.2**. Every function in the supported DAO and navigator interfaces is accessible from both packages. Function availability, successful local execution and live-network acceptance are different kinds of evidence; this page records each separately.
+
+## Protocol and application capabilities
+
+| Area | SDK | CLI and TUI |
+| --- | --- | --- |
+| Complete contract access | 353 typed functions and 103 events across 17 interfaces | ABI reads/writes/encoding, event decoding and guided forms |
+| DAO governance | Reads, membership, capabilities, proposal lifecycle, batch votes, governance self-calls and ragequit | Named DAO/proposal commands plus complete generic methods |
+| Proposal outcomes | Execution, defeated closure, failed action and retention checks | Verified processing and recovery; intentional closure is distinct from execution |
+| Navigators | All eight types, constructors, calls, deployment bytecode and activation plans | Discovery, constructor forms, creation, activation and generic lifecycle calls |
+| DAO launch | Direct, existing-vault and new-vault plans | Plan, preview, send and verify commands for all three routes |
+| Vaults and tokens | Complete vault/owner/module methods; token reads, approvals, permits and exact amounts | ABI access, common token commands, vault outcome checks |
+| Indexed data | All 25 public tables, exact numerics, joins, pagination and realtime reconciliation | Table discovery, list/count/get, DAO profiles and activity |
+| Metadata and allowlists | Poster content, profile merging, Merkle proofs and bounded IPFS reads | Poster, allowlist and IPFS commands |
+| Signing and recovery | Caller-owned signer, durable-store contract, nonce coordination and replacement inspection | Encrypted V3 wallets, SQLite journal, review, gas/value caps and recovery |
+
+ABI access preserves the protocol's authorization rules. Generic calls do not automatically add a specialized quote, eligibility check or workflow for every method. Built-in CLI signing supports Quai accounts in Cyprus-1; deploying protocol singleton infrastructure and adding custom contract ABIs are outside the packaged CLI surface.
+
+## All DAO and navigator functions exercised locally
+
+The SDK's source checks compare current Solidity compiler output, inherited methods, public getters and generated TypeScript maps. The execution suites call actual DAO/token/navigator bytecode through the SDK. Successful writes and independently compared reads fill the following inventory:
+
+| Contract | Reads | Writes |
+| --- | ---: | ---: |
+| DAOShip | 41 / 41 | 21 / 21 |
+| Onboarder | 16 / 16 | 5 / 5 |
+| ERC-20 Tribute | 13 / 13 | 6 / 6 |
+| NFT-Gate | 20 / 20 | 4 / 4 |
+| Signal | 16 / 16 | 3 / 3 |
+| Timelock | 14 / 14 | 6 / 6 |
+| Vesting | 9 / 9 | 5 / 5 |
+| Budget | 10 / 10 | 7 / 7 |
+| Subscription | 24 / 24 | 8 / 8 |
+| **Total** | **163 / 163** | **65 / 65** |
+
+The behavior suites use a test avatar for DAO/navigator scenarios. A separate deployment suite uses real QuaiVault implementation, proxy and factory artifacts. It verifies all three launch routes and all eight navigator creation/activation plans, including owner authorization and Budget's vault module grant. These local EVM checks do not exercise Quai serialization or prove mainnet behavior.
+
+## Automated SDK and CLI checks
+
+- **SDK:** 339 tests, coverage gates, declaration consumers, all five package entry points, source/ABI parity, local Solidity execution and 13 adapter conformance tests. The full workspace validation passed during this review.
+- **CLI:** 71 tests after the proposal-closure correction, passing on Node 22, 24 and 26. Coverage includes V3 encryption, tampering and KDF limits, concurrent state updates, ambiguous sends, recovery, ABI fields and the real terminal handoff for secret entry.
+- **Packages:** actual tarballs are checked outside the source directory. GitHub release jobs test a clean registry consumer before passing the exact archive to the npm publisher. Release tags must match package metadata; archives are checksummed and published with provenance.
+
+Tests establish the behaviors asserted by their fixtures. They do not establish exhaustive branch coverage or immunity to future changes in contracts, RPC providers or dependencies.
+
+## Recorded Orchard acceptance
+
+The SDK campaign exercised all three launch routes and all eight navigator activations. The subsequent CLI campaign used two funded accounts through encrypted keystores and completed **23 confirmed transactions**, **15 scenarios** and **16 exact contract-rejection checks**. It covered:
+
+- DAO proposals, voting, processing, cancellation and ragequit, plus authorized vault setup.
+- Native onboarding, ERC-20 tribute and NFT membership claims.
+- Weighted Signal voting and Timelock execution after its real delay.
+- Vesting claims, Budget funding/spending/cancellation and Subscription fee payment.
+- Indexed proposal commitment checks and journal recovery.
+
+When Orchard block production paused, the CLI retained the pending hash and recovered the original transaction after blocks resumed. A completed-campaign rerun produced **zero additional broadcasts**. The campaign's total transaction fees were **0.004033866 QUAI**; recorded native value was 206 wei.
+
+[Public transaction evidence](https://github.com/DAO-Ships/daoships-cli/blob/main/docs/orchard-acceptance.json) · [Reproduction and coverage boundaries](https://github.com/DAO-Ships/daoships-cli/blob/main/docs/orchard-testing.md)
+
+## Remaining boundaries
+
+The live campaign did not repeat every privileged mutation, permit variant, fresh CLI deployment, hour-long Subscription delinquency or Budget period rollover. Local tests provide complementary coverage for many of those paths. The new defeated-closure CLI regressions use deterministic local fixtures; the existing SDK Solidity suites exercise actual defeated closure.
+
+Mainnet checks were **read-only**. Both networks passed chain identity and shard-block reads during this review. Funded business-lifecycle acceptance remains on Orchard. Confirmation depth does not prove finality; indexer checkpoints do not prove an entity was materialized or that an RPC is honest.
+
+Vault owner consensus, custom contracts/navigators, IPFS hosting and application storage policies remain integration responsibilities. CLI recovery coordinates processes sharing one configuration directory; another wallet application using the same key is outside that coordination. Less common TUI operations use ABI forms and JSON details rather than specialized screens.
+
+[SDK source coverage](https://github.com/DAO-Ships/daoships-sdk/blob/main/docs/DAO_NAVIGATOR_FUNCTION_COVERAGE.md) · [SDK guide](/docs/developers/sdk) · [CLI guide](/docs/developers/cli)

@@ -1,242 +1,101 @@
 export const metadata = {
   title: "Launch a DAO from TypeScript",
-  description:
-    "Deploy a complete DAO Ships ship programmatically with the quais SDK — encode init params, mine CREATE2 salts for the 0x00 shard, launch, then post metadata via Poster.",
+  description: "Plan, simulate and verify DAO Ships launches using the TypeScript SDK, with explicit vault setup and recoverable execution.",
 };
 
 # Launch a DAO from TypeScript
 
-This guide walks through deploying a complete DAO — a Quai Vault treasury, a `DAOShip`
-governance module, and the `SharesERC20` / `LootERC20` tokens — in a single transaction using the
-[quais](https://www.npmjs.com/package/quais) SDK. Then you submit a proposal and attach metadata
-via `Poster`.
+Use **`@daoships/sdk@0.1.0-alpha.3`** to construct and verify a launch. The SDK supports direct DAO launches against an existing vault, combined launches with an existing vault, and combined launches that create a new vault. The [CLI](/docs/developers/cli) supplies executable versions of these workflows, including encrypted signing and local recovery.
 
-The addresses in the snippets below target **Quai mainnet (Cyprus-1), chain ID `9`**. The same
-code runs against the Orchard testnet (chain ID `15000`) — swap in the testnet column from
-[Contracts](/docs/developers/contracts), which is the canonical source for both networks.
-
-## 1. Encode the governance config
-
-Governance parameters are ABI-encoded into a single `bytes` blob. All percentages are **basis
-points** (`10000 = 100%`).
-
-```ts
-import { quais } from "quais";
-
-const governanceConfig = quais.AbiCoder.defaultAbiCoder().encode(
-  ["uint32", "uint32", "uint256", "uint256", "uint256", "uint256", "uint32"],
-  [
-    7 * 24 * 3600,          // votingPeriod: 7 days
-    3 * 24 * 3600,          // gracePeriod: 3 days
-    quais.parseQuai("0.1"), // proposalOffering
-    2000,                   // quorumPercent: 20% (basis points)
-    quais.parseQuai("1"),   // sponsorThreshold: 1 share
-    6600,                   // minRetentionPercent: 66%
-    7 * 24 * 3600,          // defaultExpiryWindow: 7 days
-  ],
-);
+```sh
+npm install @daoships/sdk@0.1.0-alpha.3 quais@1.0.0-alpha.53
 ```
 
-<Callout type="danger" title="All seven fields are required">
-`DAOShip` decodes this blob as a **seven**-field tuple, and the trailing `defaultExpiryWindow` is a
-`uint32`, not a `uint256`. Omit it or mistype it and `abi.decode` reverts during DAO
-initialization — the launch fails with no clearer signal than a failed transaction. See
-[Governance parameters](/docs/guides/governance-parameters) for per-template values.
-</Callout>
+The following example prepares an **existing-vault** launch. It does not broadcast. Supply the Orchard launcher from the [contract reference](/docs/developers/contracts), the intended vault and the public deployment account. That account must be a Cyprus-1 Quai account.
 
-<Callout type="danger" title="Basis points, not percentages">
-Pass `2000` for 20%, `10000` for 100%. Passing a raw percentage like `20` creates a near-zero
-threshold — a critical misconfiguration.
-</Callout>
-
-## 2. Encode the init params template
-
-`launchDAOShipAndVault` takes an init-params *template*. You set the `avatar` (3rd field) to a
-placeholder — the launcher overwrites it with the real vault address before launch. The token
-addresses are likewise filled in by the launcher.
+## Build and simulate a plan
 
 ```ts
-const MULTISEND = "0x003f62e6a7f2EB6b94345a9A41671888eC4A3ebA"; // MultiSendCallOnly (mainnet)
-const founder = "0xYourFounderAddress";
+import { ZeroAddress } from 'quais';
+import {
+  DaoShipsProvider, discoverDeployment, mineDAOShipSalts,
+  buildDAOShipLaunchPlan, prepareDAOShipLaunch, stringify,
+} from '@daoships/sdk';
 
-const initParamsTemplate = quais.AbiCoder.defaultAbiCoder().encode(
-  ["address","address","address","address","bytes","address[]","uint256[]","address[]","uint256[]","uint256[]","address[]","bool","bool"],
-  [
-    quais.ZeroAddress,         // lootToken   (filled by launcher)
-    quais.ZeroAddress,         // sharesToken (filled by launcher)
-    quais.ZeroAddress,         // avatar      (placeholder -> vault)
-    MULTISEND,                 // multisend library
-    governanceConfig,
-    [],                        // navigators
-    [],                        // navigator permissions
-    [founder],                 // initial members
-    [quais.parseQuai("100")],  // initial shares
-    [quais.parseQuai("0")],    // initial loot
-    [],                        // guild tokens
-    false,                     // pauseSharesOnLaunch
-    false,                     // pauseLootOnLaunch
-  ],
-);
-```
-
-## 3. Mine CREATE2 salts for the 0x00 shard
-
-Cyprus-1 requires every contract address to begin with the `0x00` shard prefix. Because the
-clones are deployed via CREATE2, you mine salts off-chain until
-`calculateAllAddresses` returns four addresses that all start with `0x00`.
-
-`minExecutionDelay` **must be `0`** here — `launchDAOShipAndVault` hardcodes `0`, so any other
-value produces a vault prediction that will not match the deployed address.
-
-<Callout type="danger" title="`sender` is the launcher address, not your wallet">
-`calculateAllAddresses(sender, …)` forwards `sender` to `DAOShipLauncher.calculateAddresses`,
-which predicts clone addresses from `keccak256(abi.encodePacked(sender, salt))`. At deploy time
-the caller of `DAOShipLauncher` is `DAOShipAndVaultLauncher` — not you — so the value that
-actually gets hashed is the **launcher's own address**:
-
-```solidity
-// DAOShipAndVaultLauncher.launchDAOShipAndVault
-(address predictedDAOShip, , ) = daoShipLauncher.calculateAddresses(
-    address(this), sharesSalt, lootSalt, daoShipSalt
-);
-```
-
-Pass the `DAOShipAndVaultLauncher` address. Passing your EOA is the intuitive reading of the
-parameter name and it is wrong: you will mine four addresses that all begin with `0x00`, then
-deploy to four entirely different addresses that probably do not — and the launch reverts.
-</Callout>
-
-```ts
-const LAUNCHER = "0x0067b50Dac689d8688eF8575B82Bc663802f3AF5"; // DAOShipAndVaultLauncher (mainnet)
-
-const launcher = new quais.Contract(
-  LAUNCHER,
-  DAOSHIP_AND_VAULT_LAUNCHER_ABI,
-  signer,
-);
-
-const vaultOwners = [founder];
-const vaultThreshold = 1;
-
-function startsWith00(addr: string): boolean {
-  return addr.toLowerCase().startsWith("0x00");
-}
-
-// `sender` must be LAUNCHER — never the founder EOA. See the callout above.
-async function mineSalts(sender: string) {
-  for (let i = 0; ; i++) {
-    const sharesSalt = BigInt(i) * 4n + 0n;
-    const lootSalt = BigInt(i) * 4n + 1n;
-    const daoShipSalt = BigInt(i) * 4n + 2n;
-    const vaultSalt = BigInt(i) * 4n + 3n;
-
-    const [daoShip, shares, loot, vault] = await launcher.calculateAllAddresses(
-      sender, sharesSalt, lootSalt, daoShipSalt, vaultSalt,
-      vaultOwners, vaultThreshold, 0, // minExecutionDelay must be 0
-    );
-
-    if ([daoShip, shares, loot, vault].every(startsWith00)) {
-      return { sharesSalt, lootSalt, daoShipSalt, vaultSalt, daoShip, shares, loot, vault };
-    }
+export async function planExistingVaultLaunch(
+  launcher: string, vault: string, sender: string,
+) {
+  const provider = new DaoShipsProvider(
+    'https://orchard.rpc.quai.network/cyprus1', 15000,
+    { usePathing: false },
+  );
+  try {
+    const deployment = (await discoverDeployment(provider, {
+      chainId: 15000, launcher,
+    })).contracts;
+    const salts = await mineDAOShipSalts({
+      factory: deployment.daoShipLauncher,
+      sender: deployment.daoShipAndVaultLauncher,
+      singletons: {
+        daoShip: deployment.daoShipSingleton,
+        shares: deployment.sharesSingleton,
+        loot: deployment.lootSingleton,
+      },
+      maxAttempts: 100_000,
+    });
+    const plan = buildDAOShipLaunchPlan({
+      chainId: 15000, from: sender, deployment,
+      route: 'existing-vault', existingVault: vault,
+      parameters: {
+        shareTokenName: 'Crew Shares', shareTokenSymbol: 'CREW',
+        lootTokenName: 'Crew Loot', lootTokenSymbol: 'LOOT',
+        sharesSalt: salts.shares.salt, lootSalt: salts.loot.salt,
+        daoShipSalt: salts.daoShip.salt,
+        initialization: {
+          multisendLibrary: deployment.multisendCallOnly,
+          governanceConfig: {
+            votingPeriod: 86_400, gracePeriod: 86_400,
+            proposalOffering: 0n, quorumPercent: 2_000n,
+            sponsorThreshold: 10n ** 18n, minRetentionPercent: 0n,
+            defaultExpiryWindow: 604_800,
+          },
+          navigators: [], navigatorPermissions: [],
+          initMembers: [sender], initShareAmounts: [100n * 10n ** 18n],
+          initLootAmounts: [0n], guildTokens: [ZeroAddress],
+          pauseSharesOnLaunch: false, pauseLootOnLaunch: false,
+        },
+      },
+    });
+    const prepared = await prepareDAOShipLaunch(plan, provider);
+    return { plan, prepared, serializedPlan: stringify(plan) };
+  } finally {
+    provider.destroy();
   }
 }
 ```
 
-<Callout type="tip" title="Mine in a worker">
-The live app runs salt mining in a Web Worker so the UI stays responsive. For server scripts,
-prefer a local prediction routine over an RPC round-trip per attempt when you have the singleton
-addresses and creation bytecode.
-</Callout>
+The configuration is illustrative; choose voting, grace, threshold and treasury policies for your DAO. Percentages are basis points (`2000` means 20%). Token allocations use exact base units. The typed configuration includes all seven governance fields and the complete launcher initialization layout.
 
-<Callout type="warning" title="Predicting locally? Mining is two-phase, and the two factories pack salts differently">
-The loop above is single-pass because `calculateAllAddresses` resolves the ordering on-chain for
-you — it predicts `DAOShip` first, then feeds that address into the vault prediction as
-`initialModules`. A local reimplementation does not get that for free:
+The plan records expected addresses and ordered steps. Preflight checks the network, launcher references, predicted addresses and current deployment prerequisites at a fixed block. Discovery verifies a consistent graph of deployed contracts; it does not authenticate who selected the launcher.
 
-1. **Phase 1** — mine `shares`, `loot`, and `daoShip`. These are independent of each other.
-2. **Phase 2** — mine `vault`, using the `daoShip` address from phase 1. The vault's
-   `initCodeHash` embeds it, so the two phases cannot be collapsed.
+## Complete vault setup and verify
 
-The two factories declare their salt parameter differently — `QuaiVaultFactory` takes a `bytes32`,
-`DAOShipLauncher` a `uint256` — but **that distinction never reaches the hash**.
-`abi.encodePacked` renders both as the same 32 big-endian bytes, so
-`keccak256(abi.encodePacked(address, bytes32))` and `keccak256(abi.encodePacked(address, uint256))`
-are identical for the same value. One implementation covers both factories; there is nothing to
-branch on. Do pad short salts to a full 32 bytes, though — a short hex string packed as `bytes32`
-is a different preimage.
+For an existing vault, the DAO module must be enabled and MultiSend delegatecall permission established through authorized vault owner execution. Follow the plan's `vault` steps and verify the final execution receipt with `verifyDeploymentWorkflowStep`. A transaction proposal or owner approval alone is not completed setup.
 
-The vault is a `QuaiVaultProxy`, **not** an
-ERC-1167 minimal proxy like the other three, so its `initCodeHash` is
-`keccak256(QuaiVaultProxy.bytecode + abi.encode(["address","bytes"], [implementation, initData]))`.
+For a **new-vault** plan, supply owners, threshold and verified QuaiVault proxy creation bytecode. `mineDAOShipSalts` first mines the DAO/token addresses, then the vault using the predicted DAO as its initial module. `buildDAOShipLaunchPlan` uses route `new-vault`, `vaultSalt` and `vaultProxyBytecode`. Obtain that bytecode from the verified vault build for the selected factory; the navigator bytecode bundle does not supply vault infrastructure.
 
-Mine naively, then verify the result with a single `calculateAllAddresses` call rather than
-trusting a local reimplementation of the vault hash.
-</Callout>
+For a **direct** plan, use the direct launcher and mine salts with the account that calls that launcher as `sender`. Combined routes use the combined launcher as the factory's sender. The SDK validates these route-dependent predictions; do not reuse salts mined with a different sender.
 
-## 4. Launch
+## Execute with durable checkpoints
 
-Pass the mined salts to `launchDAOShipAndVault`. The `sender` you mined against **must** be the
-`DAOShipAndVaultLauncher` address — it is `msg.sender` to both factories at deploy time — or the
-predicted addresses will not match what gets deployed.
+`advanceDeploymentWorkflow` advances one step at a time using an atomic `DeploymentWorkflowStore` and caller-supplied executors. Executors obtain the correct signer or vault/DAO authorization and persist transaction hashes before waiting. `reconcileDeploymentWorkflowStep` handles a mined transaction whose acknowledgement was lost.
 
-```ts
-const salts = await mineSalts(LAUNCHER); // NOT await signer.getAddress()
+The SDK never supplies a private key, keystore or approval policy. Use the [SDK transaction and recovery boundary](/docs/developers/sdk#sign-persist-and-recover), or use the CLI's `launch plan`, `launch execute`, `workflow prepare` and `workflow verify` commands. Review the plan before a send and preserve its operation IDs across restarts.
 
-const tx = await launcher.launchDAOShipAndVault(
-  initParamsTemplate,
-  "MyDAO Shares", "MDS",
-  "MyDAO Loot", "MDL",
-  vaultOwners, vaultThreshold,
-  salts.vaultSalt, salts.sharesSalt, salts.lootSalt, salts.daoShipSalt,
-);
-const receipt = await tx.wait();
-// Event: LaunchDAOShipAndVault(daoShip, vault, shares, loot, newVault, launcher)
-```
+## Add navigators and metadata
 
-After this transaction, `DAOShip` is already enabled as a module on the vault — there is no
-separate `enableModule` step.
+`buildNavigatorDeploymentPlan` covers all eight built-in navigators. Native CREATE needs a nonce and a Cyprus-1 address prepared by a Quai-aware executor; the CLI implements this. Activation is separate: DAO roles, Budget's vault module permission, and Signal's governance endorsement have different requirements. Creating a contract does not activate it.
 
-## 5. Submit a proposal
+Use `buildDaoProfileUpdate` and `encodePosterPost` for DAO metadata. Carry forward fields that should remain unchanged, and post through the correct authorized route. A raw metadata post from an arbitrary signer cannot establish DAO authority. Proposal actions should use `encodeProposal` and `buildGovernanceAction`, with commitment and outcome checks during processing.
 
-Proposals carry a MultiSend-encoded batch of vault actions. Here we send 10 QUAI from the
-treasury:
-
-```ts
-const daoShip = new quais.Contract(salts.daoShip, DAOSHIP_ABI, signer);
-
-const proposalData = encodeMultiSend([{
-  operation: 0,                 // Call
-  to: recipientAddress,
-  value: quais.parseQuai("10"),
-  data: "0x",
-}]);
-
-await daoShip.submitProposal(proposalData, 0, "Fund community event", {
-  value: await daoShip.proposalOffering(),
-});
-```
-
-## 6. Post metadata via Poster
-
-`Poster` stores no state — it emits `NewPost` for indexers and frontends. Attach a DAO profile
-under the recognized tag so the indexer picks it up:
-
-```ts
-const poster = new quais.Contract(
-  "0x004Db03AA2593B4885AFEFF688ca2634D1533fac", // Poster (mainnet)
-  [
-    "function post(string content, string tag) external",
-    "event NewPost(address indexed user, string content, string indexed tag)",
-  ],
-  signer,
-);
-
-await poster.post(
-  JSON.stringify({ name: "My DAO", description: "A test ship", logo: "ipfs://Qm..." }),
-  "daoships.launcher.daoProfile",
-);
-```
-
-The indexer stores these posts in `ds_records`, keyed by tag and trust level. See
-[Indexer](/docs/developers/indexer) for how to query them, and
-[Build a Navigator](/docs/developers/build-a-navigator) to add onboarding extensions.
+[SDK deployment workflow reference](https://github.com/DAO-Ships/daoships-sdk/blob/main/docs/deployment-workflows.md) · [CLI deployment examples](https://github.com/DAO-Ships/daoships-cli/blob/main/docs/deployments.md) · [Coverage and testing](/docs/developers/coverage)

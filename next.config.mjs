@@ -1,4 +1,5 @@
 import createMDX from "@next/mdx";
+import { fileURLToPath } from "node:url";
 
 /** @type {import('rehype-pretty-code').Options} */
 const prettyCodeOptions = {
@@ -10,7 +11,7 @@ const prettyCodeOptions = {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  eslint: { ignoreDuringBuilds: true },
+  turbopack: { root: fileURLToPath(new URL(".", import.meta.url)) },
   pageExtensions: ["ts", "tsx", "md", "mdx"],
   async redirects() {
     // Section roots have no index page — send them to the first page of each.

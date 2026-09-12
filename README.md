@@ -81,3 +81,9 @@ components/     Nav, Footer, Logo, PageHeader, Reveal, ComingSoon, landing/*
 lib/            site config, marketing content, indexer stats fetcher
 public/logos/   ship's-helm brand assets (from daoships-app)
 ```
+
+## SDK and CLI documentation checks
+
+`npm run check:docs` compiles the displayed SDK and launch examples against the pinned, published SDK, checks internal documentation routes, and verifies the command/ABI coverage counts. It runs before every production build. The SDK and quais are development dependencies used by these checks, not runtime imports in the website.
+
+Refresh the CLI reference and public agent schema from an installed release with `node scripts/sync-cli-docs.mjs /path/to/cli/dist/bin.js`, then update the reviewed version and coverage notes. The shared navigation automatically includes new pages in search, the sitemap and `/llms.txt`.

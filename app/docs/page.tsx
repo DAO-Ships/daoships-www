@@ -30,6 +30,13 @@ export default function DocsHome() {
         </Link>
       </p>
 
+      <p className="mt-4 max-w-2xl text-dao-text-secondary">
+        Building an integration? Start with the{" "}
+        <Link href="/docs/developers/sdk" className="text-primary-300 hover:text-primary-200">TypeScript SDK</Link>
+        {" "}or the{" "}
+        <Link href="/docs/developers/cli" className="text-primary-300 hover:text-primary-200">CLI and terminal workspace</Link>.
+      </p>
+
       <div className="mt-12 grid gap-5 sm:grid-cols-2">
         {docsNav.map((section, i) => {
           const Icon = icons[i % icons.length];

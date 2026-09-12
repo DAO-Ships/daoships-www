@@ -11,6 +11,10 @@ it runs on, and what each contract does. The addresses below come from
 `deployment-addresses.json` in the contracts repository and match the addresses the live app
 uses in `src/config/contracts.ts`.
 
+For complete, versioned ABIs and typed access, use the [TypeScript SDK](/docs/developers/sdk).
+The [CLI reference](/docs/developers/cli-reference) lists the packaged contract inventory;
+`daoships contract methods <kind>` shows every callable signature and overload.
+
 <Callout type="warning" title="Orchard has had several deployments — derive, don't copy">
 DAO Ships has been deployed to Orchard more than once, and each deployment is complete and
 internally consistent. Repositories and config files still contain addresses from retired ones,
@@ -23,9 +27,9 @@ schema records — verified against the running application, not against a confi
 address holds bytecode, and the whole set reproduces from its launcher via the walk
 [below](#derive-the-addresses-instead-of-copying-them).
 
-**If a value here disagrees with something you found elsewhere, derive the set from
-`DAOShipAndVaultLauncher` and trust that.** A derived set is consistent by construction. That is
-the only check that distinguishes the live deployment from a retired one.
+**If sources disagree, first verify the intended network and launcher against the application
+and indexer you intend to use, then derive its references.** A derived set is internally
+consistent; that alone cannot distinguish a current deployment from a retired or untrusted one.
 </Callout>
 
 ## Networks
@@ -82,7 +86,7 @@ that infrastructure is shared across DAO Ships deployments on the same network.)
 ## Derive the addresses instead of copying them
 
 A hardcoded table of nine addresses has nine chances to be stale. You only need **two** per
-network — `DAOShipAndVaultLauncher` and `Poster` — because seven of the remaining eight are
+network — `DAOShipAndVaultLauncher` and `Poster` — because all seven remaining addresses are
 reachable on-chain from the launcher:
 
 ```
@@ -198,7 +202,7 @@ navigator) via `mintShares` / `mintLoot` and the corresponding burns. The protoc
 ### Poster
 
 An [EIP-3722](https://eips.ethereum.org/EIPS/eip-3722) content bus that emits `NewPost` and
-stores no state, so a post costs around `25K` gas regardless of content length:
+stores no state. Gas still grows with calldata and event content; estimate the actual post:
 
 ```solidity
 function post(string content, string tag) external;

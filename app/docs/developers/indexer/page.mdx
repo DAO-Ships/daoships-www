@@ -11,6 +11,10 @@ timestamped checkpoints, proposals span multiple events, and member balances der
 transfers. The **DAO Ships indexer** solves this by consuming on-chain events and writing
 structured rows into a Supabase (PostgreSQL) database your frontend can query directly.
 
+The [TypeScript SDK](/docs/developers/sdk#indexed-data-with-exact-amounts) supplies typed,
+precision-preserving reads for all 25 public tables. The [CLI](/docs/developers/cli) exposes
+them through `indexer tables`, `indexer list`, `indexer count` and `indexer get`.
+
 The indexer is **event-driven**: every row derives from on-chain events, with zero RPC calls in
 its handlers. Counter operations are idempotent (safe to retry under reorg or replay), and it
 indexes more than two dozen distinct event types across the launcher, governance, tokens, the

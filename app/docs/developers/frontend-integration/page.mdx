@@ -11,6 +11,8 @@ Supabase Realtime for live updates. There is no application server in front of i
 shaping for you. Much of the data it serves is user- and contract-supplied on-chain text, so
 treating it safely is the integrator's job.
 
+The [TypeScript SDK](/docs/developers/sdk) supplies typed, precision-preserving indexer reads, profile joins and realtime reconciliation. Applications still own safe rendering and their wallet boundary.
+
 This page is the rendering and operating checklist. For the catalogue of `ds_*` tables, query
 patterns, and TypeScript row types, see [The Indexer](/docs/developers/indexer).
 
@@ -21,32 +23,26 @@ change shipped before your frontend updates, or a pre-validation row left in the
 let something through.
 </Callout>
 
-## Numbers are strings — coerce to BigInt
+## Preserve numeric precision before parsing
 
-Every large numeric column is `NUMERIC(78,0)` (a full `uint256`) and arrives over PostgREST as a
-JSON **string**. Smaller values that fit a JS number can arrive as a **number** (a `poll_id` or
-`change_id` of `0` comes back as `0`, not `"0"`). So you cannot assume either type.
+Raw PostgREST `NUMERIC` and `BIGINT` values can arrive as JSON numbers. Select large numeric
+columns with `::text` before parsing, or use the SDK's typed projections, which already do this.
+An unsafe number cannot be repaired by converting it to a string or `BigInt` afterwards.
 
-Always coerce with `BigInt(String(value))` before any arithmetic or comparison. Never use
-`parseInt`, `parseFloat`, or `Number` — they silently lose precision above `2^53`. Compare against
-`bigint` literals (`=== 0n`), never against string literals (`=== '0'` can be `false` when the value
-is the number `0`).
+For explicit low-level reads, reject invalid amounts rather than replacing an unknown balance
+with zero:
 
 ```ts
 function toBig(value: unknown): bigint {
-  if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
-  if (typeof value === "number" && Number.isFinite(value)) return BigInt(Math.trunc(value));
-  return 0n; // safe default for untrusted / unexpected input
+  if (typeof value === "string" && /^(0|[1-9]\d*)$/.test(value)) return BigInt(value);
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return BigInt(value);
+  throw new Error("Expected an exact nonnegative integer.");
 }
-
-const shares = toBig(member.shares);
-const loot = toBig(member.loot);
-const hasPower = shares > 0n || loot > 0n; // not `member.shares === '0'`
 ```
 
-Wrap `toBig` around anything sourced from `content_json` in `try/catch` (or keep the regex guard
-above) — a malformed string passed straight to `BigInt()` throws. For display, format the string
-directly with a `BigInt` divisor rather than converting to a float.
+Preserve nullable fields as unknown when the schema allows them. Disable decisions that require
+an unavailable amount and show a missing-data state. The SDK's `parseTokenAmount` rejects excess
+fractional precision; the CLI expects decimal strings for token base units in JSON.
 
 ## Addresses are lowercase
 
@@ -169,10 +165,8 @@ function safeUrl(url: string | null | undefined): string | null {
   if (!url || typeof url !== "string") return null;
   const trimmed = url.trim();
   if (!SAFE_SCHEME.test(trimmed)) return null;
-  const decoded = decodeURIComponent(trimmed).toLowerCase();
-  if (decoded.startsWith("javascript:") || decoded.startsWith("data:")) return null;
   // ipfs://CID is not browser-loadable — rewrite to an HTTPS gateway
-  if (trimmed.startsWith("ipfs://")) return IPFS_GATEWAY + trimmed.slice(7);
+  if (/^ipfs:\/\//i.test(trimmed)) return IPFS_GATEWAY + trimmed.slice(7);
   return trimmed;
 }
 ```
@@ -236,32 +230,21 @@ unless `trust_status === 'sanctioned'`** — see [Navigators overview](/docs/nav
 Permissioned navigators are vouched by `NavigatorSet` and are always sanctioned.
 </Callout>
 
-## Realtime: handle the rough edges
+## Realtime: reconcile through exact HTTP reads
 
-Realtime payloads are the same rows you get over REST, so **every rule above** — coercion,
-normalization, escaping, URL validation, trust gating — applies unchanged to them. Beyond that, the
-transport has three rough edges:
+Realtime delivery can be missed, duplicated or reordered. Use events to invalidate the affected
+view and re-fetch it through precision-preserving HTTP projections. Raw change payloads do not
+inherit the `::text` casts used in a REST select. Applying them directly can reintroduce numeric
+precision loss.
 
-- **Delivery is not guaranteed.** A dropped WebSocket can silently miss events. On reconnect,
-  re-fetch the affected data over REST to resync rather than assuming your state is current.
-- **Order is not guaranteed.** Events can arrive out of order. Reconcile by `block_number` — only
-  replace an existing row when the incoming payload's `block_number` is greater than or equal to the
-  one you already hold.
-- **DELETE means reorg.** A `DELETE` payload signals a chain reorg that removed a row. Drop it from
-  your UI state; do not treat it as a user action.
+The SDK provides `watchIndexer` and `supabaseRealtimeAdapter` with bounded reconciliation,
+reconnect handling and explicit reorg hooks. Keep rendering, trust checks and URL validation on
+the refreshed data. A DELETE should invalidate the row and prompt reconciliation; it is not by
+itself proof of a particular chain event. Block number alone cannot resolve the order of multiple
+updates in one block.
 
-```ts
-function reconcile(rows: RecordRow[], incoming: RecordRow): RecordRow[] {
-  const i = rows.findIndex((r) => r.id === incoming.id);
-  if (i < 0) return [...rows, incoming];
-  if ((incoming.block_number ?? 0) >= (rows[i].block_number ?? 0)) {
-    const next = [...rows];
-    next[i] = incoming; // newer (or same) block wins
-    return next;
-  }
-  return rows; // keep what we have; the incoming payload is stale
-}
-```
+Agents using the shared public endpoint should poll at a bounded interval instead of opening
+large numbers of subscriptions. Coordinate realtime quota with the hosted application's operator.
 
 ## Operational signals
 

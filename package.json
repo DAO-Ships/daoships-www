@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:docs": "node scripts/check-docs.mjs",
+    "prebuild": "npm run check:docs"
   },
   "dependencies": {
     "@mdx-js/loader": "^3.1.1",
@@ -27,11 +29,13 @@
     "shiki": "^4.2.0"
   },
   "devDependencies": {
+    "@daoships/sdk": "0.1.0-alpha.3",
     "@types/node": "^22.10.5",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.5.15",
+    "quais": "1.0.0-alpha.53",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3"
   },
