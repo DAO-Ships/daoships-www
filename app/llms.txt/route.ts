@@ -121,7 +121,7 @@ function build(): string {
     "",
     "## SDK and CLI quick start",
     "",
-    "Reviewed releases: @daoships/sdk@0.1.0-alpha.3 and @daoships/cli@0.1.0-alpha.2. The CLI requires Node 22.13+.",
+    "Reviewed releases: @daoships/sdk@0.1.0-alpha.4 and @daoships/cli@0.1.0-alpha.3. The CLI requires Node 22.13+.",
     "",
     "    npm install -g @daoships/cli@alpha",
     "    daoships --schema",
