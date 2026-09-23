@@ -123,7 +123,7 @@ function build(): string {
     "",
     "Reviewed releases: @daoships/sdk@0.1.0-alpha.4 and @daoships/cli@0.1.0-alpha.3. The CLI requires Node 22.13+.",
     "",
-    "    npm install -g @daoships/cli@alpha",
+    "    npm install -g @daoships/cli",
     "    daoships --schema",
     "    daoships --json network list",
     "",
