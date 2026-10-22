@@ -35,7 +35,7 @@
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.6.1",
     "postcss": "^8.5.31",
-    "quais": "1.0.0-alpha.53",
+    "quais": "1.0.0-alpha.57",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3"
   },
