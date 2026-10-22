@@ -11,6 +11,7 @@ const prettyCodeOptions = {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
   turbopack: { root: fileURLToPath(new URL(".", import.meta.url)) },
   pageExtensions: ["ts", "tsx", "md", "mdx"],
   async redirects() {
